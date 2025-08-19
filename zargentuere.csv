@@ -1,10 +1,15 @@
-Mauerlichtbreite,880
-Mauerlichthöhe,2140
-Mauerstärke,180
+Mauerlichtbreite_plan,880
+Mauerlichthöhe_plan,2140
+Mauerstärke_plan,180
+Mauerlichtbreite_Massaufnahme,
+Mauerlichthöhe_Massaufnahme_ab_MtR,
+Mauerlichthöhe_Massaufnahme,
+Mauerstärke_Massaufnahme,
 Bodeneinstand,0
 Maueraufbau_Bandseite,10
 Maueraufbau_Futterseite,10
 Zargenfalztiefe,46
+Zargenfalzbreite,17
 Bandseite,L
 Bandtyp,Elkuch 16-4
 Schlosstyp,1001_BB
@@ -16,3 +21,6 @@ Besonderes,0
 Brandschutz,0
 Farbe_Bandseite,RAL9016
 Farbe_Futterseite,RAL9016
+
+Lichtbreite,NA
+Lichthöhe,NA

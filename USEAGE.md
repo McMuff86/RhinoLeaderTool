@@ -33,12 +33,19 @@ Passe `<BENUTZER>` an. Alternativ kannst du die Pfade in den `run_*.py` Dateien 
 ### 4) Datenquellen (CSV)
 - Jede CSV steht für einen Typ und liegt im Projektordner, z. B. `rahmentuere.csv`.
 - Format je Zeile: `Schluessel, Wert`
+- Wichtige Schlüssel (aktuell):
+  - Planwerte: `Mauerlichtbreite_plan`, `Mauerlichthöhe_plan`, `Mauerstärke_plan`
+  - Massaufnahme: `Mauerlichtbreite_Massaufnahme`, `Mauerlichthöhe_Massaufnahme_ab_MtR`, `Mauerlichthöhe_Massaufnahme`, `Mauerstärke_Massaufnahme`
 - Beispiel:
 
 ```text
-Mauerlichtbreite,1080
-Mauerlichthöhe,2140
-Mauerstärke,250
+Mauerlichtbreite_plan,1080
+Mauerlichthöhe_plan,2140
+Mauerstärke_plan,250
+Mauerlichtbreite_Massaufnahme,
+Mauerlichthöhe_Massaufnahme_ab_MtR,
+Mauerlichthöhe_Massaufnahme,
+Mauerstärke_Massaufnahme,
 ```
 
 ### 5) Einen neuen Typ hinzufügen

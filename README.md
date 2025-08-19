@@ -53,6 +53,21 @@ Ein kleines Rhino-Python Werkzeug, um Leader-Beschriftungen mit vordefinierten B
 }
 ```
 
+### CSV-Schlüssel (aktuell)
+- Planwerte: `Mauerlichtbreite_plan`, `Mauerlichthöhe_plan`, `Mauerstärke_plan`
+- Massaufnahme: `Mauerlichtbreite_Massaufnahme`, `Mauerlichthöhe_Massaufnahme_ab_MtR`, `Mauerlichthöhe_Massaufnahme`, `Mauerstärke_Massaufnahme`
+
+Beispiel:
+```text
+Mauerlichtbreite_plan,1080
+Mauerlichthöhe_plan,2140
+Mauerstärke_plan,250
+Mauerlichtbreite_Massaufnahme,
+Mauerlichthöhe_Massaufnahme_ab_MtR,
+Mauerlichthöhe_Massaufnahme,
+Mauerstärke_Massaufnahme,
+```
+
 ### Automatischer DimStyle-Import
 - Falls ein benötigter DimStyle fehlt, importiert das Skript DimStyles aus `LeaderAnnotationTemplate.3dm` (Pfad per `config.json` steuerbar) und versucht es erneut.
 

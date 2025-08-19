@@ -1,6 +1,10 @@
-Mauerlichtbreite,940
-Mauerlichthöhe,2140
-Mauerstärke,250
+Mauerlichtbreite_plan,940
+Mauerlichthöhe_plan,2140
+Mauerstärke_plan,250
+Mauerlichtbreite_Massaufnahme,
+Mauerlichthöhe_Massaufnahme_ab_MtR,
+Mauerlichthöhe_Massaufnahme,
+Mauerstärke_Massaufnahme,
 Bodeneinstand,10
 Maueraufbau_Bandseite,0
 Maueraufbau_Futterseite,0
@@ -12,3 +16,6 @@ Montageart,Blendrahmen
 Schwelle,0
 Besonderes,0 
 Brandschutz,EI30
+
+Lichtbreite,NA
+Lichthöhe,NA

@@ -118,6 +118,17 @@ def attach_usertext(obj_id, data):
     for key, value in data.items():
         rs.SetUserText(obj_id, key, value)
     print(f"{len(data)} UserText-Einträge hinzugefügt.")
+    try:
+        # Persistente Zuordnung: LeaderGUID als UserText speichern
+        existing = rs.GetUserText(obj_id, "LeaderGUID")
+        if existing is None or existing == "":
+            rs.SetUserText(obj_id, "LeaderGUID", str(obj_id))
+        # Schema-Version setzen, falls nicht vorhanden
+        schema = rs.GetUserText(obj_id, "SchemaVersion")
+        if schema is None or schema == "":
+            rs.SetUserText(obj_id, "SchemaVersion", "1.0")
+    except Exception:
+        pass
 
 def log_leader_creation(cfg, leader_id, typ, dimstyle_name, csv_filename):
     try:
@@ -126,6 +137,10 @@ def log_leader_creation(cfg, leader_id, typ, dimstyle_name, csv_filename):
         cfg_base = cfg.get("base_path")
         base_path = cfg_base if (cfg_base and os.path.isdir(cfg_base)) else get_base_path()
         log_file = log_cfg.get("file") or ("created_leaders_log.csv" if mode == "csv" else "created_leaders_log.xlsx")
+        # Korrigiere Dateiendung, falls XLSX-Modus mit unpassender Endung
+        if mode == "xlsx" and not log_file.lower().endswith((".xlsx", ".xlsm")):
+            root, _ = os.path.splitext(log_file)
+            log_file = root + ".xlsx"
         log_path = os.path.join(base_path, log_file)
 
         timestamp = datetime.now().isoformat(timespec="seconds")

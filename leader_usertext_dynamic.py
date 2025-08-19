@@ -46,13 +46,7 @@ def load_config():
             "rahmentuere_w": {"dimstyle": "Standard 1:10 Rahmenbeschriftung WHG Eingang", "csv": "rahmentuerew.csv"},
             "spez": {"dimstyle": "Standard 1:10 Spez.Rahmenbeschriftung", "csv": "spez.csv"}
         },
-        "aliases": {
-            "bbrt": "rahmentuere",
-            "bbzt": "zargentuere",
-            "bbrtw": "rahmentuere_w",
-            "bbst": "schiebetuere",
-            "bbsp": "spez"
-        }
+        "aliases": {}
     }
     try:
         if os.path.isfile(config_path):
@@ -104,6 +98,15 @@ def attach_usertext(obj_id, data):
     for key, value in data.items():
         rs.SetUserText(obj_id, key, value)
     print(f"{len(data)} UserText-Einträge hinzugefügt.")
+    try:
+        existing = rs.GetUserText(obj_id, "LeaderGUID")
+        if existing is None or existing == "":
+            rs.SetUserText(obj_id, "LeaderGUID", str(obj_id))
+        schema = rs.GetUserText(obj_id, "SchemaVersion")
+        if schema is None or schema == "":
+            rs.SetUserText(obj_id, "SchemaVersion", "1.0")
+    except Exception:
+        pass
 
 cfg = load_config()
 types_cfg = cfg.get("types", {})
@@ -129,14 +132,22 @@ if typ not in types_cfg:
 dimstyle_name = types_cfg[typ]["dimstyle"]
 csv_filename = types_cfg[typ]["csv"]
 
-# ✅ Dynamischer Benutzerpfad
-user_dir = os.path.expanduser("~")  # ergibt C:\Users\<user>
-base_path = os.path.join(user_dir, "source", "repos", "work", "library", "RhinoLeaderTool")
+# ✅ Pfade aus Konfig beziehen (mit Fallback)
+user_dir = os.path.expanduser("~")
+default_base = os.path.join(user_dir, "source", "repos", "work", "library", "RhinoLeaderTool")
+cfg_base = cfg.get("base_path")
+base_path = cfg_base if (cfg_base and os.path.isdir(cfg_base)) else default_base
 csv_path = os.path.join(base_path, csv_filename)
+template_rel = cfg.get("template_path") or "LeaderAnnotationTemplate.3dm"
+template_path = template_rel if os.path.isabs(template_rel) else os.path.join(base_path, template_rel)
 
 # Ablauf
 csv_data = read_csv_attributes(csv_path)
 style_id = get_dimstyle_id(dimstyle_name)
+if not style_id:
+    # Versuche DimStyles aus Template zu importieren
+    import_dimstyles_from_template(template_path)
+    style_id = get_dimstyle_id(dimstyle_name)
 if style_id:
     leader_id = create_leader_with_style(style_id)
     if leader_id:

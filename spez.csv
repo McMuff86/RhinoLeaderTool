@@ -1,6 +1,10 @@
-Mauerlichtbreite,1080
-Mauerlichthöhe,2140
-Mauerstärke,250
+Mauerlichtbreite_plan,1080
+Mauerlichthöhe_plan,2140
+Mauerstärke_plan,250
+Mauerlichtbreite_Massaufnahme,
+Mauerlichthöhe_Massaufnahme_ab_MtR,
+Mauerlichthöhe_Massaufnahme,
+Mauerstärke_Massaufnahme,
 Maueraufbau_Falz,2.5
 Maueraufbau_Überschlag,0
 Bandseite,L
@@ -8,3 +12,6 @@ Typ,Rahmentüre
 Schwelle, 
 Besonderes, 
 Brandschutz,EI30
+
+Lichtbreite,NA
+Lichthöhe,NA

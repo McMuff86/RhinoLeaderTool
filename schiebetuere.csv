@@ -1,6 +1,10 @@
-Mauerlichtbreite,880
-Mauerlichthöhe,2140
-Mauerstärke,150
+Mauerlichtbreite_plan,880
+Mauerlichthöhe_plan,2140
+Mauerstärke_plan,150
+Mauerlichtbreite_Massaufnahme,
+Mauerlichthöhe_Massaufnahme_ab_MtR,
+Mauerlichthöhe_Massaufnahme,
+Mauerstärke_Massaufnahme,
 Bodeneinstand,10
 Maueraufbau_Bandseite,0
 Maueraufbau_Futterseite,0
@@ -13,3 +17,6 @@ Typ,Schiebetüre
 Schwelle,0 
 Besonderes,0
 Brandschutz,0
+
+Lichtbreite,NA
+Lichthöhe,NA

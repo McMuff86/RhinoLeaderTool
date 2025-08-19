@@ -1,9 +1,18 @@
 {
-  
+  "export": {
+    "na_value": "NA"
+  },
   "template_path": "LeaderAnnotationTemplate.3dm",
   "logging": {
     "mode": "xlsx",
     "file": "created_leaders_log.csv"
+  },
+  "aliases": {
+    "bbrt": "rahmentuere",
+    "bbzt": "zargentuere",
+    "bbrtw": "rahmentuere_w",
+    "bbst": "schiebetuere",
+    "bbsp": "spez"
   },
   "types": {
     "rahmentuere": {"dimstyle": "Standard 1:10 Rahmenbeschriftung", "csv": "rahmentuere.csv"},
