@@ -1,0 +1,36 @@
+﻿Z '_Zoom
+ZE '_Zoom _Extents
+ZT '_Zoom _Target
+ZEA '_Zoom _All _Extents
+ZS '_Zoom _Selected
+ZSA '_Zoom _All _Selected
+S '_Snap
+O '_Ortho
+P '_Planar
+M ! _Move
+U _Undo
+POn ! _PointsOn
+POff ! _PointsOff
+C '_SelCrossing
+W '_SelWindow
+COn '_CurvatureGraph
+COff '_CurvatureGraphOff
+PlugInManager ! _OptionsPage _PlugIns
+AdvancedDisplay ! _OptionsPage _DisplayModes
+DisplayAttrsMgr ! _OptionsPage _DisplayModes
+Break ! _DeleteSubCrv
+SelPolysurface '_SelPolysrf
+gr _GumballRelocate
+bb _BoundingBox
+last _SelLast
+cps _CPlane _Surface
+be _BlockEdit
+stat_up ! _-RunPythonScript "S:/050_Produktion/050_Maschinen/040_Biesse/82_PrgStatus/prg_status.py"
+cp ! _-RunPythonScript "C:\Users\adrianm\AppData\Roaming\McNeel\Rhinoceros\8.0\scripts\move_clippingplane_to_layer.py"
+cbs ! _-RunPythonScript "C:\Users\adrianm\AppData\Roaming\McNeel\Rhinoceros\8.0\scripts\ClippingBox_Script.py"
+cd '_CPlane _Object
+bbrt !_-RunPythonScript "C:\Users\adrian.muff\source\\repos\work\library\RhinoLeaderTool\run_rahmentuere.py"
+bbzt !_-RunPythonScript "C:\Users\adrian.muff\source\\repos\work\library\RhinoLeaderTool\run_zargentuere.py"
+bbrtw !_-RunPythonScript "C:\Users\adrian.muff\source\\repos\work\library\RhinoLeaderTool\run_rahmentuere_w.py"
+bbst !_-RunPythonScript "C:\Users\adrian.muff\source\\repos\work\library\RhinoLeaderTool\run_schiebetuere.py"
+bbsp !_-RunPythonScript "C:\Users\adrian.muff\source\\repos\work\library\RhinoLeaderTool\run_spez.py"

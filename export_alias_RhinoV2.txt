@@ -1,0 +1,5 @@
+﻿bbrt !_-RunPythonScript "C:\Users\adrian.muff\source\\repos\work\library\RhinoLeaderTool\run_rahmentuere.py"
+bbzt !_-RunPythonScript "C:\Users\adrian.muff\source\\repos\work\library\RhinoLeaderTool\run_zargentuere.py"
+bbrtw !_-RunPythonScript "C:\Users\adrian.muff\source\\repos\work\library\RhinoLeaderTool\run_rahmentuere_w.py"
+bbst !_-RunPythonScript "C:\Users\adrian.muff\source\\repos\work\library\RhinoLeaderTool\run_schiebetuere.py"
+bbsp !_-RunPythonScript "C:\Users\adrian.muff\source\\repos\work\library\RhinoLeaderTool\run_spez.py"
