@@ -38,6 +38,28 @@ Ein kleines Rhino-Python Werkzeug, um Leader-Beschriftungen mit vordefinierten B
 2. In Rhino unter „Options → Aliases“ die gewünschten Alias-Zeilen eintragen (siehe `export_alias_RhinoV2.txt`) und Pfade bei Bedarf anpassen.
 3. Sicherstellen, dass die im Mapping referenzierten DimStyles im Dokument vorhanden sind.
 
+### Konfiguration (config.json)
+- Im Projekt-Root kann eine `config.json` abgelegt werden. Fehlt sie, wird eine Default-Konfiguration verwendet.
+- Wichtige Schlüssel:
+
+```json
+{
+  "base_path": "C:/Users/<BENUTZER>/source/repos/work/library/RhinoLeaderTool",
+  "template_path": "LeaderAnnotationTemplate.3dm",
+  "logging": { "mode": "csv", "file": "created_leaders_log.csv" },
+  "types": {
+    "rahmentuere": {"dimstyle": "Standard 1:10 Rahmenbeschriftung", "csv": "rahmentuere.csv"}
+  }
+}
+```
+
+### Automatischer DimStyle-Import
+- Falls ein benötigter DimStyle fehlt, importiert das Skript DimStyles aus `LeaderAnnotationTemplate.3dm` (Pfad per `config.json` steuerbar) und versucht es erneut.
+
+### Logging
+- Standard: CSV-Log `created_leaders_log.csv` im `base_path`.
+- Optional: Excel-Log (`logging.mode = "xlsx"`). Erfordert `openpyxl`. Bei Fehlern fällt das Skript automatisch auf CSV zurück.
+
 ### Funktionsweise (intern)
 - `run_<typ>.py` setzt eine Variable `typ` und lädt den Code aus `main_leader_script.py` per `exec(...)`.
 - `main_leader_script.py` enthält:

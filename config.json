@@ -1,0 +1,16 @@
+{
+  
+  "template_path": "LeaderAnnotationTemplate.3dm",
+  "logging": {
+    "mode": "xlsx",
+    "file": "created_leaders_log.csv"
+  },
+  "types": {
+    "rahmentuere": {"dimstyle": "Standard 1:10 Rahmenbeschriftung", "csv": "rahmentuere.csv"},
+    "zargentuere": {"dimstyle": "Standard 1:10 Zargenbeschriftung", "csv": "zargentuere.csv"},
+    "schiebetuere": {"dimstyle": "Standard 1:10 Schiebetürbeschriftung", "csv": "schiebetuere.csv"},
+    "rahmentuere_w": {"dimstyle": "Standard 1:10 Rahmenbeschriftung WHG Eingang", "csv": "rahmentuerew.csv"},
+    "spez": {"dimstyle": "Standard 1:10 Spez.Rahmenbeschriftung", "csv": "spez.csv"}
+  }
+}
+

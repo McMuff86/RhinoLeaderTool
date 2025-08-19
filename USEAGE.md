@@ -10,6 +10,7 @@ So verwendest du das RhinoLeaderTool in Rhino.
   - „Standard 1:10 Rahmenbeschriftung WHG Eingang“ (falls `rahmentuere_w` genutzt wird)
   - „Standard 1:10 Spez.Rahmenbeschriftung“ (falls `spez` genutzt wird)
 - Die CSV-Dateien liegen im Projektordner und enthalten je zwei Spalten: `Schluessel, Wert`.
+- Optional: `LeaderAnnotationTemplate.3dm` liegt im Projekt-Root. Fehlt ein DimStyle, wird daraus importiert.
 
 ### 2) Aliases in Rhino anlegen
 Öffne in Rhino: Options → Aliases → Neuer Alias. Hinterlege z. B.:
@@ -42,15 +43,20 @@ Mauerstärke,250
 
 ### 5) Einen neuen Typ hinzufügen
 1. Lege eine neue CSV an, z. B. `tuer_xyz.csv`.
-2. Ergänze in `main_leader_script.py` im Mapping `run_leader_for_type` einen Eintrag:
+2. Ergänze in `config.json` unter `types` einen Eintrag:
 
 ```python
-"tuer_xyz": ("Mein DimStyle Name", "tuer_xyz.csv"),
+"tuer_xyz": {"dimstyle": "Mein DimStyle Name", "csv": "tuer_xyz.csv"},
 ```
 
 3. Stelle sicher, dass der DimStyle im Dokument existiert.
 4. Optional: Lege ein neues Runner-Skript `run_tuer_xyz.py` an (siehe bestehende `run_*.py`).
 5. Lege in Rhino einen Alias an, der das Runner-Skript aufruft.
+
+### 7) Logging konfigurieren
+- In `config.json` unter `logging` kann der Modus gewählt werden:
+  - `"mode": "csv"` (Standard) → `created_leaders_log.csv`
+  - `"mode": "xlsx"` → `created_leaders_log.xlsx` (benötigt `openpyxl` in Rhino-Python)
 
 ### 6) Alternative: Alias-dynamische Variante
 - Das Skript `leader_usertext_dynamic.py` kann den verwendeten Alias aus der Command History lesen und daraus CSV und DimStyle bestimmen. Dafür das interne `mapping` anpassen.
