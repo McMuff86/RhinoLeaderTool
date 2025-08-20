@@ -1,21 +1,39 @@
-Mauerlichtbreite_plan,940
-Mauerlichthöhe_plan,2140
-Mauerstärke_plan,250
-Mauerlichtbreite_Massaufnahme,
-Mauerlichthöhe_Massaufnahme_ab_MtR,
-Mauerlichthöhe_Massaufnahme,
-Mauerstärke_Massaufnahme,
-Bodeneinstand,10
-Maueraufbau_Bandseite,0
-Maueraufbau_Futterseite,0
 Bandseite,L
-Bandtyp,Elkuch 16-4
-Schlosstyp,1834_RZ
-Typ,Rahmentüre Wohnung
-Montageart,Blendrahmen
-Schwelle,0
+Bandtyp,SFS_HE18EI30-M10X1X30-FIX
+Betriebsauftrag,NA
 Besonderes,0 
+Bodeneinstand,10
 Brandschutz,EI30
-
+Drückergarnitur,NA
+Einlaufseite_von_aussen,NA
+Farbe_Bandseite,NCS S 0500-N (weiss)
+Farbe_Futterseite,NCS S 5010-Y30R matt (Ocker)
+Haus,NA
 Lichtbreite,NA
 Lichthöhe,NA
+Montageart,Blendrahmen
+Maueraufbau_Bandseite,0
+Maueraufbau_Futterseite,0
+Mauerlichthöhe_Massaufnahme,
+Mauerlichthöhe_Massaufnahme_ab_MtR,
+Mauerlichthöhe_plan,2140
+Mauerlichtbreite_Massaufnahme,
+Mauerlichtbreite_plan,940
+Mauerstärke_Massaufnahme,
+Mauerstärke_plan,250
+Muschelgriff_typ,NA
+Rahmenfalztiefe,30
+Rahmenfalzbreite,15
+Schiebtürbeschlag,NA
+Schloss,NA
+Schlosstyp,1834_RZ
+Schwelle,40
+Schwellentyp,NA
+Typ,Rahmentüre Wohnung
+Türblattdicke,NA
+Türblattkern,NA
+Türblatttyp,NA
+Umfassungstyp,NA
+Zargen-Profil,NA
+Zargenfalztiefe,NA
+Zargenfalzbreite,NA

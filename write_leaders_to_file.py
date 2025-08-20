@@ -103,12 +103,33 @@ def export_leader_texts(mode=None):
     target_styles = cfg.get("export", {}).get("target_styles", [])
     # Erforderliche Keys aus allen CSV-Dateien (Union)
     required_keys = compute_required_keys_from_config(cfg)
-    
-    # Ausgabe-Dateipfade vorbereiten
-    desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-    output_path_txt = os.path.join(desktop_path, "leader_texts.txt")
-    output_path_stats = os.path.join(desktop_path, "leader_stats.txt")
-    output_path_xlsx = os.path.join(desktop_path, "leader_export.xlsx")
+
+    def get_export_paths(active_mode, prompt_user=True):
+        desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+        use_standard = True
+        if prompt_user:
+            # True = Standard (Desktop), False = Dokument-Ordner
+            res = rs.GetBoolean("Export to standard Desktop path?", ("StandardPath", "No", "Yes"), True)
+            if res is not None and len(res) > 0:
+                use_standard = bool(res[0])
+        if use_standard:
+            base_dir = desktop_path
+            base_name = "leader"
+        else:
+            # Dokumentpfad verwenden
+            doc_path = sc.doc.Path or ""
+            doc_name = sc.doc.Name or "leader"
+            if doc_path:
+                base_dir = os.path.dirname(doc_path)
+            else:
+                # Fallback auf Desktop, wenn Datei ungespeichert
+                base_dir = desktop_path
+            base_name = os.path.splitext(doc_name)[0] or "leader"
+
+        output_path_txt = os.path.join(base_dir, f"{base_name}_leader_texts.txt")
+        output_path_stats = os.path.join(base_dir, f"{base_name}_leader_stats.txt")
+        output_path_xlsx = os.path.join(base_dir, f"{base_name}_leader_export.xlsx")
+        return output_path_txt, output_path_stats, output_path_xlsx
 
     # Sammellisten
     export_lines_text = []
@@ -176,6 +197,8 @@ def export_leader_texts(mode=None):
     # Zielformat bestimmen
     if mode is None:
         mode = (cfg.get("logging", {}).get("mode") or "csv").lower()
+    # Ausgabe-Dateipfade nach Nutzerwunsch bestimmen
+    output_path_txt, output_path_stats, output_path_xlsx = get_export_paths(mode, prompt_user=True)
 
     # TXT (wie bisher)
     if mode in ("txt", "csv"):
