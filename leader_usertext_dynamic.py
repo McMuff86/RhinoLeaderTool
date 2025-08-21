@@ -130,7 +130,25 @@ if typ not in types_cfg:
     sys.exit()
 
 dimstyle_name = types_cfg[typ]["dimstyle"]
-csv_filename = types_cfg[typ]["csv"]
+# Preset-Auswahl (falls vorhanden)
+entry = types_cfg.get(typ, {})
+presets = entry.get("presets") or []
+csv_filename = entry.get("csv")
+preset_name = entry.get("default_preset") or "Standard"
+if presets:
+    names = [p.get("name") for p in presets if p.get("name")]
+    default_name = entry.get("default_preset")
+    default_name = default_name if (default_name in names) else (names[0] if names else None)
+    try:
+        selection = rs.ListBox(names, message=f"Select preset for {typ}", title="Choose Preset", default=default_name)
+        chosen_name = selection or default_name
+        for p in presets:
+            if p.get("name") == chosen_name:
+                csv_filename = p.get("csv") or csv_filename
+                preset_name = chosen_name or preset_name
+                break
+    except Exception:
+        pass
 
 # ✅ Pfade aus Konfig beziehen (mit Fallback)
 user_dir = os.path.expanduser("~")
@@ -143,6 +161,10 @@ template_path = template_rel if os.path.isabs(template_rel) else os.path.join(ba
 
 # Ablauf
 csv_data = read_csv_attributes(csv_path)
+try:
+    csv_data["Preset"] = preset_name or "Standard"
+except Exception:
+    pass
 style_id = get_dimstyle_id(dimstyle_name)
 if not style_id:
     # Versuche DimStyles aus Template zu importieren

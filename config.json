@@ -16,7 +16,15 @@
   },
   "types": {
     "rahmentuere": {"dimstyle": "Standard 1:10 Rahmenbeschriftung", "csv": "rahmentuere.csv"},
-    "zargentuere": {"dimstyle": "Standard 1:10 Zargenbeschriftung", "csv": "zargentuere.csv"},
+    "zargentuere": {
+      "dimstyle": "Standard 1:10 Zargenbeschriftung",
+      "csv": "zargentuere.csv",
+      "default_preset": "Standard Zimmertüre",
+      "presets": [
+        { "name": "Standard Zimmertüre", "csv": "zargentuere.csv" },
+        { "name": "Zargentuere EI30 FT49 Band18-4D", "csv": "zargentuere_2.csv" }
+      ]
+    },
     "schiebetuere": {"dimstyle": "Standard 1:10 Schiebetürbeschriftung", "csv": "schiebetuere.csv"},
     "rahmentuere_w": {"dimstyle": "Standard 1:10 Rahmenbeschriftung WHG Eingang", "csv": "rahmentuerew.csv"},
     "spez": {"dimstyle": "Standard 1:10 Spez.Rahmenbeschriftung", "csv": "spez.csv"}

@@ -175,6 +175,30 @@ def log_leader_creation(cfg, leader_id, typ, dimstyle_name, csv_filename):
     except Exception as e:
         print("Fehler beim Logging der Leader-Erstellung:", e)
 
+def select_preset(cfg, typ):
+    entry = (cfg.get("types", {}) or {}).get(typ, {})
+    presets = entry.get("presets") or []
+    default_preset = entry.get("default_preset")
+    if not presets:
+        # Kein Preset definiert → CSV aus Typ und Preset-Label auf "Standard" oder default_preset
+        preset_label = default_preset or "Standard"
+        return entry.get("csv"), preset_label
+    # Prompt zur Auswahl eines Presets (namenbasiert)
+    names = [p.get("name") for p in presets if p.get("name")]
+    if not names:
+        return entry.get("csv"), (default_preset or "Standard")
+    default_name = default_preset if (default_preset in names) else names[0]
+    try:
+        selection = rs.ListBox(names, message=f"Select preset for {typ}", title="Choose Preset", default=default_name)
+        chosen_name = selection or default_name
+        for p in presets:
+            if p.get("name") == chosen_name:
+                return p.get("csv") or entry.get("csv"), chosen_name
+        return entry.get("csv"), (chosen_name or default_name or "Standard")
+    except Exception:
+        return entry.get("csv"), (default_name or default_preset or "Standard")
+
+
 def run_leader_for_type(typ):
     cfg = load_config()
     types_cfg = cfg.get("types", {})
@@ -183,7 +207,8 @@ def run_leader_for_type(typ):
         return
 
     dimstyle_name = types_cfg[typ]["dimstyle"]
-    csv_filename = types_cfg[typ]["csv"]
+    # CSV-Datei ggf. via Preset-Auswahl überschreiben (und Preset-Name zurückgeben)
+    csv_filename, preset_name = select_preset(cfg, typ)
 
     cfg_base = cfg.get("base_path")
     base_path = cfg_base if (cfg_base and os.path.isdir(cfg_base)) else get_base_path()
@@ -192,6 +217,11 @@ def run_leader_for_type(typ):
     template_path = template_rel if os.path.isabs(template_rel) else os.path.join(base_path, template_rel)
 
     csv_data = read_csv_attributes(csv_path)
+    # Preset-Name als UserText mitschreiben (für spätere Filterung) – immer setzen
+    try:
+        csv_data["Preset"] = preset_name or "Standard"
+    except Exception:
+        pass
     style_id = ensure_dimstyle_exists(dimstyle_name, template_path)
     if style_id:
         leader_id = create_leader_with_style(style_id)
