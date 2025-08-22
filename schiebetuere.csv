@@ -1,6 +1,7 @@
 Bandseite,NA
 Bandtyp,NA
 Betriebsauftrag,NA
+Betriebsauftragsposition,NA
 Besonderes,0
 Bodeneinstand,10
 Brandschutz,0
@@ -11,16 +12,18 @@ Farbe_Futterseite,NA
 Haus,NA
 Lichtbreite,NA
 Lichthöhe,NA
+Montageart,Schiebetüre Rahmen
 Maueraufbau_Bandseite,0
 Maueraufbau_Futterseite,0
-Mauerlichthöhe_Massaufnahme,
-Mauerlichthöhe_Massaufnahme_ab_MtR,
+Mauerlichthöhe_Massaufnahme,NA
+Mauerlichthöhe_Massaufnahme_ab_MtR,NA
 Mauerlichthöhe_plan,2140
-Mauerlichtbreite_Massaufnahme,
+Mauerlichtbreite_Massaufnahme,NA
 Mauerlichtbreite_plan,880
-Mauerstärke_Massaufnahme,
+Mauerstärke_Massaufnahme,NA
 Mauerstärke_plan,150
 Muschelgriff_typ,0
+NPK_Pos.,NA
 Rahmenfalztiefe,NA
 Rahmenfalzbreite,NA
 Schiebtürbeschlag,OPK
@@ -32,6 +35,7 @@ Typ,Schiebetüre
 Türblattdicke,NA
 Türblattkern,NA
 Türblatttyp,NA
+Türschliesser,NA
 Umfassungstyp,Rahmen
 Zargen-Profil,NA
 Zargenfalztiefe,NA

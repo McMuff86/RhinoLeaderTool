@@ -14,6 +14,17 @@
     "bbst": "schiebetuere",
     "bbsp": "spez"
   },
+  "defaults": {
+    "usertext_overrides": {
+      "Haus": "NA",
+      "Betriebsauftrag": "NA",
+      "Betriebsauftragsposition": "NA"
+    },
+    "always_prompt": false,
+    "prompt_on_first_leader": true,
+    "prompt_keys": ["Haus", "Betriebsauftragsposition"],
+    "type_specific_keys": ["Betriebsauftrag"]
+  },
   "types": {
     "rahmentuere": {"dimstyle": "Standard 1:10 Rahmenbeschriftung", "csv": "rahmentuere.csv"},
     "zargentuere": {

@@ -1,7 +1,8 @@
 Bandseite,L
 Bandtyp,Elkuch 18-4D
 Betriebsauftrag,NA
-Besonderes,Türschliesser 
+Betriebsauftragsposition,NA
+Besonderes,NA 
 Bodeneinstand,40
 Brandschutz,EI30
 Drückergarnitur,0
@@ -14,14 +15,15 @@ Lichthöhe,NA
 Montageart,NA
 Maueraufbau_Bandseite,10
 Maueraufbau_Futterseite,10
-Mauerlichthöhe_Massaufnahme,
-Mauerlichthöhe_Massaufnahme_ab_MtR,
+Mauerlichthöhe_Massaufnahme,NA
+Mauerlichthöhe_Massaufnahme_ab_MtR,NA
 Mauerlichthöhe_plan,2140
-Mauerlichtbreite_Massaufnahme,
+Mauerlichtbreite_Massaufnahme,NA
 Mauerlichtbreite_plan,1080
-Mauerstärke_Massaufnahme,
+Mauerstärke_Massaufnahme,NA
 Mauerstärke_plan,250
 Muschelgriff_typ,NA
+NPK_Pos.,NA
 Rahmenfalztiefe,NA
 Rahmenfalzbreite,NA
 Schiebtürbeschlag,NA
@@ -33,7 +35,8 @@ Typ,UDS
 Türblattdicke,42
 Türblattkern,SP
 Türblatttyp,P1/EI30
-Umfassungstyp,NA
+Türschliesser,Türschliesser
+Umfassungstyp,Stahlzarge
 Zargen-Profil,UDS
 Zargenfalztiefe,49
 Zargenfalzbreite,17

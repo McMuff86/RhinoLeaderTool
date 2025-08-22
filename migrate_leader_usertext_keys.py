@@ -33,6 +33,37 @@ def load_config():
     except Exception:
         pass
     return default
+def sync_leaders_with_docdata(keys_to_sync=None):
+    try:
+        # keys_to_sync: Liste von UserText-Schlüsseln auf Leader-Ebene, die aus DocData aktualisiert werden sollen
+        # Verwendet LeaderType, um den DocData-Abschnitt zu bestimmen: "RhinoLeaderToolType:<typ>"
+        if keys_to_sync is None:
+            keys_to_sync = []
+        updated = 0
+        total = 0
+        for obj in sc.doc.Objects:
+            if isinstance(obj, Rhino.DocObjects.LeaderObject):
+                total += 1
+                rhobj = obj
+                leader_id = rhobj.Id
+                leader_type = rs.GetUserText(leader_id, "LeaderType")
+                if not leader_type:
+                    continue
+                section = f"RhinoLeaderToolType:{leader_type}"
+                for k in keys_to_sync:
+                    try:
+                        new_val = rs.GetDocumentData(section, k)
+                        if new_val is not None:
+                            old_val = rs.GetUserText(leader_id, k)
+                            if old_val != new_val:
+                                rs.SetUserText(leader_id, k, new_val)
+                                updated += 1
+                    except Exception:
+                        pass
+        print("Leader gesamt:", total, "aktualisierte Felder:", updated)
+    except Exception as e:
+        print("Fehler bei Sync DocData → Leader:", e)
+
 
 
 def get_base_path(cfg):

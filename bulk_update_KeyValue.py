@@ -83,7 +83,7 @@ def update_only_na(key, new_val):
 
 
 #Beispiel E: Alle DimStyles (target_styles leer in config.json) und ohne Report
-bulk_update_key_for_leaders("Lichthöhe", "NA", styles=None, write_report=False)
+bulk_update_key_for_leaders("Preset", "NA", styles=None, write_report=False)
 
 
 '''

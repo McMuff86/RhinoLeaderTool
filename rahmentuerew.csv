@@ -1,6 +1,7 @@
 Bandseite,L
 Bandtyp,SFS_HE18EI30-M10X1X30-FIX
 Betriebsauftrag,NA
+Betriebsauftragsposition,NA
 Besonderes,0 
 Bodeneinstand,10
 Brandschutz,EI30
@@ -14,14 +15,15 @@ Lichthöhe,NA
 Montageart,Blendrahmen
 Maueraufbau_Bandseite,0
 Maueraufbau_Futterseite,0
-Mauerlichthöhe_Massaufnahme,
-Mauerlichthöhe_Massaufnahme_ab_MtR,
+Mauerlichthöhe_Massaufnahme,NA
+Mauerlichthöhe_Massaufnahme_ab_MtR,NA
 Mauerlichthöhe_plan,2140
-Mauerlichtbreite_Massaufnahme,
+Mauerlichtbreite_Massaufnahme,NA
 Mauerlichtbreite_plan,940
-Mauerstärke_Massaufnahme,
+Mauerstärke_Massaufnahme,NA
 Mauerstärke_plan,250
 Muschelgriff_typ,NA
+NPK_Pos.,NA
 Rahmenfalztiefe,30
 Rahmenfalzbreite,15
 Schiebtürbeschlag,NA
@@ -33,7 +35,8 @@ Typ,Rahmentüre Wohnung
 Türblattdicke,NA
 Türblattkern,NA
 Türblatttyp,NA
-Umfassungstyp,NA
+Türschliesser,NA
+Umfassungstyp,Rahmen
 Zargen-Profil,NA
 Zargenfalztiefe,NA
 Zargenfalzbreite,NA
