@@ -26,7 +26,15 @@
     "type_specific_keys": ["Betriebsauftrag"]
   },
   "types": {
-    "rahmentuere": {"dimstyle": "Standard 1:10 Rahmenbeschriftung", "csv": "rahmentuere.csv"},
+    "rahmentuere": {
+    "dimstyle": "Standard 1:10 Rahmenbeschriftung",
+    "csv": "rahmentuere.csv",
+    "default_preset": "Standard",
+    "presets": [
+      { "name": "Standard", "csv": "rahmentuere.csv" },
+      { "name": "Nebenraum Typ1", "csv": "rahmentuere_nebenraum_Typ1.csv" }
+  ]
+},
     "zargentuere": {
       "dimstyle": "Standard 1:10 Zargenbeschriftung",
       "csv": "zargentuere.csv",

@@ -3,7 +3,7 @@ Bandtyp,KAULS Objektband B2025/X Edelstahl 100/25mm
 Betriebsauftrag,NA
 Betriebsauftragsposition,NA
 Besonderes,0 
-Bodeneinstand,120
+Bodeneinstand,0
 Brandschutz,EI30
 Drückergarnitur,NA
 Einlaufseite_von_aussen,NA
@@ -29,12 +29,12 @@ Rahmenfalzbreite,15
 Schiebtürbeschlag,NA
 Schloss,NA
 Schlosstyp,1102_RZ
-Schwelle,40 
-Schwellentyp,40 x 20 CNS
+Schwelle,30 
+Schwellentyp,30 x 20 CNS
 Typ,Rahmentüre
 Türblattdicke,NA
 Türblattkern,SP
-Türblatttyp,NA
+Türblatttyp,TB Wirus P1 Vollspan 42mm EI30
 Türschliesser,NA
 Schliessblechtyp,NA
 Spion,NA
