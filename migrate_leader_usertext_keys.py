@@ -72,6 +72,37 @@ def get_base_path(cfg):
     cfg_base = cfg.get("base_path") if isinstance(cfg, dict) else None
     return cfg_base if (cfg_base and os.path.isdir(cfg_base)) else default_base
 
+def get_selected_csv_folder(cfg, prompt_if_missing=False):
+    try:
+        section = "RhinoLeaderToolGlobals"
+        key = "CsvFolder"
+        selected = None
+        try:
+            selected = rs.GetDocumentData(section, key)
+        except Exception:
+            selected = None
+        if selected and os.path.isdir(selected):
+            return selected
+        if not prompt_if_missing:
+            return None
+        try:
+            start_dir = (cfg.get("base_path") or get_base_path(cfg))
+        except Exception:
+            start_dir = get_base_path(cfg)
+        try:
+            folder = rs.BrowseForFolder(folder=start_dir, message="Select CSV folder for this document")
+        except Exception:
+            folder = None
+        if folder and os.path.isdir(folder):
+            try:
+                rs.SetDocumentData(section, key, folder)
+            except Exception:
+                pass
+            return folder
+    except Exception:
+        pass
+    return None
+
 
 def read_csv_keys(csv_path):
     keys = []
@@ -94,14 +125,37 @@ def read_csv_keys(csv_path):
 def compute_required_keys_from_config(cfg):
     required = []
     try:
-        base_path = get_base_path(cfg)
+        base_path = get_selected_csv_folder(cfg, prompt_if_missing=False) or get_base_path(cfg)
         types_cfg = (cfg or {}).get("types", {})
         seen = set()
         for _typ, spec in types_cfg.items():
             csv_name = spec.get("csv")
             if not csv_name:
                 continue
-            csv_path = csv_name if os.path.isabs(csv_name) else os.path.join(base_path, csv_name)
+            if os.path.isabs(csv_name):
+                csv_path = csv_name
+            else:
+                # recursive lookup
+                csv_path = csv_name
+                try:
+                    direct = os.path.join(base_path, csv_name)
+                    if os.path.isfile(direct):
+                        csv_path = direct
+                    else:
+                        target = os.path.basename(csv_name).lower()
+                        picked = None
+                        best_rel = None
+                        for root, _dirs, files in os.walk(base_path):
+                            for fn in files:
+                                if fn.lower() == target:
+                                    rel = os.path.relpath(os.path.join(root, fn), base_path)
+                                    if best_rel is None or len(rel) < len(best_rel) or (len(rel) == len(best_rel) and rel.lower() < best_rel.lower()):
+                                        best_rel = rel
+                                        picked = os.path.join(root, fn)
+                        if picked:
+                            csv_path = picked
+                except Exception:
+                    pass
             for key in read_csv_keys(csv_path):
                 if key not in seen:
                     seen.add(key)

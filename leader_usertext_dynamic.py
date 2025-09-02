@@ -35,7 +35,92 @@ def get_base_path():
     user_dir = os.path.expanduser("~")
     return os.path.join(user_dir, "source", "repos", "work", "library", "RhinoLeaderTool")
 
+def get_selected_csv_folder(cfg, prompt_if_missing=True):
+    try:
+        section = "RhinoLeaderToolGlobals"
+        key = "CsvFolder"
+        selected = None
+        try:
+            selected = rs.GetDocumentData(section, key)
+        except Exception:
+            selected = None
+        if selected and os.path.isdir(selected):
+            return selected
+        if not prompt_if_missing:
+            return None
+        try:
+            start_dir = (cfg.get("base_path") or get_base_path())
+        except Exception:
+            start_dir = get_base_path()
+        try:
+            folder = rs.BrowseForFolder(folder=start_dir, message="Select CSV folder for this document")
+        except Exception:
+            folder = None
+        if folder and os.path.isdir(folder):
+            try:
+                rs.SetDocumentData(section, key, folder)
+            except Exception:
+                pass
+            return folder
+    except Exception:
+        pass
+    return None
+
+def find_csv_in_tree(base_dir, csv_name, prompt_user=False, typ=None):
+    try:
+        if not base_dir or not os.path.isdir(base_dir) or not csv_name:
+            return None
+        # previously selected mapping
+        try:
+            section = "RhinoLeaderToolCsvMap"
+            map_key = f"{typ}:{csv_name}" if typ else csv_name
+            mapped = rs.GetDocumentData(section, map_key)
+            if mapped and os.path.isfile(mapped):
+                return mapped
+        except Exception:
+            pass
+        direct = os.path.join(base_dir, csv_name)
+        if os.path.isfile(direct):
+            return direct
+        matches = []
+        target = os.path.basename(csv_name)
+        for root, _dirs, files in os.walk(base_dir):
+            for fn in files:
+                if fn.lower() == target.lower():
+                    matches.append(os.path.join(root, fn))
+        if not matches:
+            return direct
+        if len(matches) == 1:
+            chosen = matches[0]
+        else:
+            rels = [(m, os.path.relpath(m, base_dir)) for m in matches]
+            rels.sort(key=lambda x: (len(x[1]), x[1].lower()))
+            chosen = rels[0][0]
+            if prompt_user:
+                try:
+                    options = [os.path.relpath(m, base_dir) for m in matches]
+                    default_opt = os.path.relpath(chosen, base_dir)
+                    sel = rs.ListBox(options, message=f"Multiple CSV matches for {csv_name}. Choose one:", title="Select CSV", default=default_opt)
+                    if sel and sel in options:
+                        chosen = os.path.join(base_dir, sel)
+                except Exception:
+                    pass
+        try:
+            section = "RhinoLeaderToolCsvMap"
+            map_key = f"{typ}:{csv_name}" if typ else csv_name
+            rs.SetDocumentData(section, map_key, chosen)
+        except Exception:
+            pass
+        return chosen
+    except Exception:
+        return None
+
 def load_config():
+    try:
+        script_dir = os.path.dirname(__file__)
+    except Exception:
+        script_dir = os.getcwd()
+    local_cfg = os.path.join(script_dir, "config.json")
     base_path = get_base_path()
     config_path = os.path.join(base_path, "config.json")
     default_cfg = {
@@ -50,8 +135,9 @@ def load_config():
         "aliases": {}
     }
     try:
-        if os.path.isfile(config_path):
-            with open(config_path, "r", encoding="utf-8") as f:
+        cfg_to_use = local_cfg if os.path.isfile(local_cfg) else (config_path if os.path.isfile(config_path) else None)
+        if cfg_to_use:
+            with open(cfg_to_use, "r", encoding="utf-8") as f:
                 file_cfg = json.load(f)
             for k, v in file_cfg.items():
                 default_cfg[k] = v
@@ -366,11 +452,10 @@ if presets:
 # ✅ Pfade aus Konfig beziehen (mit Fallback)
 user_dir = os.path.expanduser("~")
 default_base = os.path.join(user_dir, "source", "repos", "work", "library", "RhinoLeaderTool")
-cfg_base = cfg.get("base_path")
-base_path = cfg_base if (cfg_base and os.path.isdir(cfg_base)) else default_base
-csv_path = os.path.join(base_path, csv_filename)
+csv_base = get_selected_csv_folder(cfg, prompt_if_missing=True) or (cfg.get("base_path") if (cfg.get("base_path") and os.path.isdir(cfg.get("base_path"))) else default_base)
+csv_path = find_csv_in_tree(csv_base, csv_filename, prompt_user=True, typ=typ) or os.path.join(csv_base, csv_filename)
 template_rel = cfg.get("template_path") or "LeaderAnnotationTemplate.3dm"
-template_path = template_rel if os.path.isabs(template_rel) else os.path.join(base_path, template_rel)
+template_path = template_rel if os.path.isabs(template_rel) else os.path.join(csv_base, template_rel)
 
 # Ablauf
 csv_data = read_csv_attributes(csv_path)

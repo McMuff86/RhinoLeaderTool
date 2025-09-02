@@ -28,6 +28,12 @@ def get_base_path():
     return os.path.join(user_dir, "source", "repos", "work", "library", "RhinoLeaderTool")
 
 def load_config():
+    # Prefer config.json next to this script (repo-local), then fallback to default base_path
+    try:
+        script_dir = os.path.dirname(__file__)
+    except Exception:
+        script_dir = os.getcwd()
+    config_path_local = os.path.join(script_dir, "config.json")
     base_path = get_base_path()
     config_path = os.path.join(base_path, "config.json")
     default_config = {
@@ -47,10 +53,14 @@ def load_config():
     }
 
     try:
-        if os.path.isfile(config_path):
-            with open(config_path, "r", encoding="utf-8") as f:
+        cfg_to_use = None
+        if os.path.isfile(config_path_local):
+            cfg_to_use = config_path_local
+        elif os.path.isfile(config_path):
+            cfg_to_use = config_path
+        if cfg_to_use:
+            with open(cfg_to_use, "r", encoding="utf-8") as f:
                 file_cfg = json.load(f)
-            # flach mergen (Datei-Werte überschreiben Default)
             for k, v in file_cfg.items():
                 default_config[k] = v
     except Exception as e:
@@ -73,6 +83,99 @@ def get_na_value(cfg):
         return (cfg.get("export", {}) or {}).get("na_value", "NA")
     except Exception:
         return "NA"
+
+def get_selected_csv_folder(cfg, prompt_if_missing=True):
+    try:
+        section = "RhinoLeaderToolGlobals"
+        key = "CsvFolder"
+        # Read previously selected folder from DocData
+        selected = None
+        try:
+            selected = rs.GetDocumentData(section, key)
+        except Exception:
+            selected = None
+        if selected and os.path.isdir(selected):
+            return selected
+        if not prompt_if_missing:
+            return None
+        # Prompt user to choose a CSV base folder
+        try:
+            start_dir = (cfg.get("base_path") or get_base_path())
+        except Exception:
+            start_dir = get_base_path()
+        try:
+            folder = rs.BrowseForFolder(folder=start_dir, message="Select CSV folder for this document")
+        except Exception:
+            folder = None
+        if folder and os.path.isdir(folder):
+            try:
+                rs.SetDocumentData(section, key, folder)
+            except Exception:
+                pass
+            return folder
+    except Exception:
+        pass
+    return None
+
+def find_csv_in_tree(base_dir, csv_name, prompt_user=False, typ=None):
+    try:
+        if not base_dir or not os.path.isdir(base_dir) or not csv_name:
+            return None
+        # Check persisted mapping first
+        try:
+            section = "RhinoLeaderToolCsvMap"
+            map_key = f"{typ}:{csv_name}" if typ else csv_name
+            mapped = rs.GetDocumentData(section, map_key)
+            if mapped and os.path.isfile(mapped):
+                return mapped
+        except Exception:
+            pass
+
+        # Direct join first
+        direct = os.path.join(base_dir, csv_name)
+        if os.path.isfile(direct):
+            return direct
+
+        # Scan recursively
+        matches = []
+        target_basename = os.path.basename(csv_name)
+        for root, _dirs, files in os.walk(base_dir):
+            for fn in files:
+                if fn.lower() == target_basename.lower():
+                    matches.append(os.path.join(root, fn))
+
+        if not matches:
+            return direct  # fallback (likely non-existing, but consistent)
+
+        # If only one match, use it
+        if len(matches) == 1:
+            chosen = matches[0]
+        else:
+            # Prefer shortest relative path; tie-breaker lexicographic
+            rels = [(m, os.path.relpath(m, base_dir)) for m in matches]
+            rels.sort(key=lambda x: (len(x[1]), x[1].lower()))
+            chosen = rels[0][0]
+            # Optionally prompt the user to disambiguate
+            if prompt_user:
+                try:
+                    options = [os.path.relpath(m, base_dir) for m in matches]
+                    default_opt = os.path.relpath(chosen, base_dir)
+                    sel = rs.ListBox(options, message=f"Multiple CSV matches for {csv_name}. Choose one:", title="Select CSV", default=default_opt)
+                    if sel and sel in options:
+                        chosen = os.path.join(base_dir, sel)
+                except Exception:
+                    pass
+
+        # Persist mapping for next time
+        try:
+            section = "RhinoLeaderToolCsvMap"
+            map_key = f"{typ}:{csv_name}" if typ else csv_name
+            rs.SetDocumentData(section, map_key, chosen)
+        except Exception:
+            pass
+        return chosen
+    except Exception:
+        return None
 
 def load_saved_globals(cfg):
     saved = {}
@@ -442,11 +545,14 @@ def run_leader_for_type(typ):
     # CSV-Datei ggf. via Preset-Auswahl überschreiben (und Preset-Name zurückgeben)
     csv_filename, preset_name = select_preset(cfg, typ)
 
-    cfg_base = cfg.get("base_path")
-    base_path = cfg_base if (cfg_base and os.path.isdir(cfg_base)) else get_base_path()
-    csv_path = os.path.join(base_path, csv_filename)
+    # Resolve CSV base folder: prefer per-document selection, otherwise config/base default
+    csv_base = get_selected_csv_folder(cfg, prompt_if_missing=True)
+    if not (csv_base and os.path.isdir(csv_base)):
+        cfg_base = cfg.get("base_path")
+        csv_base = cfg_base if (cfg_base and os.path.isdir(cfg_base)) else get_base_path()
+    csv_path = find_csv_in_tree(csv_base, csv_filename, prompt_user=True, typ=typ) or os.path.join(csv_base, csv_filename)
     template_rel = cfg.get("template_path") or "LeaderAnnotationTemplate.3dm"
-    template_path = template_rel if os.path.isabs(template_rel) else os.path.join(base_path, template_rel)
+    template_path = template_rel if os.path.isabs(template_rel) else os.path.join(csv_base, template_rel)
 
     csv_data = read_csv_attributes(csv_path)
     # Preset-Name als UserText mitschreiben (für spätere Filterung) – immer setzen

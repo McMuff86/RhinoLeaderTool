@@ -31,7 +31,8 @@ Passe `<BENUTZER>` an. Alternativ kannst du die Pfade in den `run_*.py` Dateien 
 3. Nach Abschluss wird der Leader erzeugt, der DimStyle gesetzt und die UserText-Werte aus der CSV angehängt.
 
 ### 4) Datenquellen (CSV)
-- Jede CSV steht für einen Typ und liegt im Projektordner, z. B. `rahmentuere.csv`.
+- Beim ersten Skriptstart wirst du nach einem CSV-Ordner gefragt. Dieser Ordner wird im Dokument gespeichert und rekursiv durchsucht (Unterordner erlaubt).
+- Jede CSV steht für einen Typ (z. B. `rahmentuere.csv`). Du kannst mehrere gleich benannte CSVs in Unterordnern haben (pro Auftrag unterschiedliche Werte).
 - Format je Zeile: `Schluessel, Wert`
 - Wichtige Schlüssel (aktuell):
   - Planwerte: `Mauerlichtbreite_plan`, `Mauerlichthöhe_plan`, `Mauerstärke_plan`
@@ -67,6 +68,7 @@ Mauerstärke_Massaufnahme,
 
 ### 6) Alternative: Alias-dynamische Variante
 - Das Skript `leader_usertext_dynamic.py` kann den verwendeten Alias aus der Command History lesen und daraus CSV und DimStyle bestimmen. Dafür das interne `mapping` anpassen.
+  - Auch hier gilt: Der per-Dokument ausgewählte CSV-Ordner wird rekursiv nach der passenden CSV-Datei durchsucht.
 
 ### Fehlerbehebung
 - Meldung „Bemaßungsstil nicht gefunden“: DimStyle-Name im Dokument prüfen.

@@ -33,6 +33,12 @@ Ein kleines Rhino-Python Werkzeug, um Leader-Beschriftungen mit vordefinierten B
 - Die verwendeten Bemaßungsstile müssen im aktiven Rhino-Dokument existieren (Name muss passen)
 - Das Repository liegt (standardmäßig) unter `C:\Users\<BENUTZER>\source\repos\work\library\RhinoLeaderTool`
 
+### Best Practice: CSV-Ordner pro Projekt (rekursiv)
+- Beim ersten Start fragt das Tool nach einem CSV-Ordner. Dieser wird im Dokument gespeichert (`RhinoLeaderToolGlobals/CsvFolder`).
+- Ab diesem Ordner sucht das Tool benötigte CSV-Dateien rekursiv (Unterordner werden berücksichtigt).
+- Vorteil: Identische Dateinamen (z. B. `rahmentuerew.csv`) können pro Auftrag unterschiedliche Werte haben.
+- Konfliktfall (mehrere Treffer): Das Tool wählt die „nächstliegende“ Datei (kürzester relativer Pfad). Optional wird eine Auswahl angezeigt; die Entscheidung wird im Dokument gespeichert (`RhinoLeaderToolCsvMap`).
+
 ### Installation (kurz)
 1. Repository an den gewünschten Pfad klonen/kopieren.
 2. In Rhino unter „Options → Aliases“ die gewünschten Alias-Zeilen eintragen (siehe `export_alias_RhinoV2.txt`) und Pfade bei Bedarf anpassen.
@@ -83,7 +89,7 @@ Mauerstärke_Massaufnahme,
   - Leader-Erstellung über Rhino-Befehl `_Leader` (mit Pausen für deine Punkteingaben)
   - Ersetzen des DimStyle am neu erzeugten Leader
   - Zuweisen der UserText-Attribute aus der CSV
-- Der CSV-Pfad wird dynamisch aus deinem Benutzerverzeichnis aufgebaut, damit keine hardcodierten Benutzer-Namen nötig sind.
+- CSV-Auflösung: Zuerst per-Dokument CSV-Ordner (DocData), dann rekursive Suche darin. Keine hardcodierten Benutzer-Namen nötig.
 
 ### Beispiel-Aliases
 Aus `export_alias_RhinoV2.txt` (Pfade ggf. anpassen):
