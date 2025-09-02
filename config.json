@@ -41,6 +41,10 @@
       "default_preset": "Standard Zimmertüre",
       "presets": [
         { "name": "Standard Zimmertüre", "csv": "zargentuere.csv" },
+        { "name": "Standard Zimmertüre Mauerstärke 150", "csv": "zargentuere_zimmer_M150.csv" },
+        { "name": "Standard Zimmertüre Mauerstärke 120", "csv": "zargentuere_zimmer_M120.csv" },
+        { "name": "Zargentüre EI30 Keller", "csv": "zargentuere_Keller_EI30.csv" },
+        { "name": "Zargentüre Keller KK2B", "csv": "zargentuere_Keller_KK2B.csv" },
         { "name": "Zargentuere EI30 FT49 Band18-4D", "csv": "zargentuere_2.csv" }
       ]
     },

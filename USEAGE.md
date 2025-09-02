@@ -74,3 +74,7 @@ Mauerstärke_Massaufnahme,
 - „Alias nicht erkannt“ (dynamisch): Alias-Schreibweise und Mapping prüfen.
 
 
+### 7) Ausgabe der Türen in Excel:
+- write_leaders_to_file.py ausführen und die Datei generieren.
+
+

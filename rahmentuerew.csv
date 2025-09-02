@@ -1,8 +1,8 @@
 Bandseite,L
 Bandtyp,SFS_HE18EI30-M10X1X30-FIX
+Besonderes,0
 Betriebsauftrag,NA
 Betriebsauftragsposition,NA
-Besonderes,0 
 Bodeneinstand,10
 Brandschutz,EI30
 Drückergarnitur,NA
@@ -12,34 +12,40 @@ Farbe_Futterseite,NCS S 5010-Y30R matt (Ocker)
 Haus,NA
 Lichtbreite,NA
 Lichthöhe,NA
-Montageart,Blendrahmen
 Maueraufbau_Bandseite,0
 Maueraufbau_Futterseite,0
+Mauerlichtbreite_Massaufnahme,NA
+Mauerlichtbreite_plan,940
 Mauerlichthöhe_Massaufnahme,NA
 Mauerlichthöhe_Massaufnahme_ab_MtR,NA
 Mauerlichthöhe_plan,2140
-Mauerlichtbreite_Massaufnahme,NA
-Mauerlichtbreite_plan,940
 Mauerstärke_Massaufnahme,NA
 Mauerstärke_plan,250
+Montageart,Blendrahmen
 Muschelgriff_typ,NA
 NPK_Pos.,NA
-Rahmenfalztiefe,30
 Rahmenfalzbreite,15
+Rahmenfalztiefe,30
+Rahmenstärke,63
 Schiebtürbeschlag,NA
+Schliessblechtyp,Einfrässchliessblech GLUTZ B-1150
 Schloss,NA
 Schlosstyp,1834_RZ
 Schwelle,40
-Schwellentyp,NA
+Schwellentyp,40 x 20 CNS
+Spion,Türspion 190° 40-90 mm verchromt poliert
 Typ,Rahmentüre Wohnung
-Türblattdicke,NA
-Türblattkern,NA
+Türblatt_Falzbreite,13
+Türblatt_Falztiefe,30
+Türblatt_Farbe_Bandseite,NCS S 0500-N (weiss)
+Türblatt_Farbe_Futterseite,NCS S 5010-Y30R matt (Ocker)
+Türblattdicke,48
+Türblattkanten,NCS S 0500-N (weiss)
+Türblattkern,SP
 Türblatttyp,NA
 Türschliesser,NA
-Schliessblechtyp,NA
-Spion,NA
 Umfassungstyp,Rahmen
 Zargen E-Mass,1003
 Zargen-Profil,NA
-Zargenfalztiefe,NA
 Zargenfalzbreite,NA
+Zargenfalztiefe,NA
