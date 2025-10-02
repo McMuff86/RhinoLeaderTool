@@ -11,29 +11,70 @@ from collections import defaultdict
 
 
 def load_config():
+    """Load configuration with robust repo-relative discovery.
+
+    Search order for config.json:
+      1) RHINOLEADERTOOL_CONFIG env var (absolute file path)
+      2) Next to this script (__file__)
+      3) Current working directory
+      4) Legacy default under ~/source/repos/work/library/RhinoLeaderTool/config.json
+
+    Also ensure a sensible base_path exists (defaults to the script directory
+    when not explicitly provided), so other functions can locate CSVs and
+    preset files within the cloned repository.
+    """
     user_dir = os.path.expanduser("~")
-    base_path = os.path.join(user_dir, "source", "repos", "work", "library", "RhinoLeaderTool")
-    cfg_path = os.path.join(base_path, "config.json")
+    legacy_base = os.path.join(user_dir, "source", "repos", "work", "library", "RhinoLeaderTool")
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    candidates = []
+    try:
+        env_path = os.environ.get("RHINOLEADERTOOL_CONFIG")
+        if env_path:
+            candidates.append(env_path)
+    except Exception:
+        pass
+    candidates.append(os.path.join(script_dir, "config.json"))
+    candidates.append(os.path.join(os.getcwd(), "config.json"))
+    candidates.append(os.path.join(legacy_base, "config.json"))
+
+    cfg_path = None
+    for path in candidates:
+        try:
+            if path and os.path.isfile(path):
+                cfg_path = path
+                break
+        except Exception:
+            continue
+
     default = {
         "logging": {"mode": "xlsx"},
         "export": {
             "target_styles": [
-        "Standard 1:10 Rahmenbeschriftung",
-        "Standard 1:10 Rahmenbeschriftung WHG Eingang",
-        "Standard 1:10 Zargenbeschriftung",
-        "Standard 1:10 Schiebetürbeschriftung",
-        "Standard 1:10 Spez.Rahmenbeschriftung"
+                "Standard 1:10 Rahmenbeschriftung",
+                "Standard 1:10 Rahmenbeschriftung WHG Eingang",
+                "Standard 1:10 Zargenbeschriftung",
+                "Standard 1:10 Schiebetürbeschriftung",
+                "Standard 1:10 Spez.Rahmenbeschriftung"
             ],
             "na_value": "NA",
             "floor_sort": True
         }
     }
+
     try:
-        if os.path.isfile(cfg_path):
+        if cfg_path:
             with open(cfg_path, "r", encoding="utf-8") as f:
                 file_cfg = json.load(f)
             for k, v in file_cfg.items():
                 default[k] = v
+    except Exception:
+        pass
+
+    # Guarantee a valid base_path pointing to the repository when possible
+    try:
+        if not default.get("base_path"):
+            default["base_path"] = script_dir
     except Exception:
         pass
     return default
@@ -42,7 +83,16 @@ def get_base_path(cfg):
     user_dir = os.path.expanduser("~")
     default_base = os.path.join(user_dir, "source", "repos", "work", "library", "RhinoLeaderTool")
     cfg_base = cfg.get("base_path") if isinstance(cfg, dict) else None
-    return cfg_base if (cfg_base and os.path.isdir(cfg_base)) else default_base
+    if cfg_base and os.path.isdir(cfg_base):
+        return cfg_base
+    # Prefer repository directory (where this script lives) if present
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        if os.path.isdir(script_dir):
+            return script_dir
+    except Exception:
+        pass
+    return default_base
 
 def get_selected_csv_folder(cfg, prompt_if_missing=False):
     try:
@@ -460,6 +510,11 @@ def choose_export_options(cfg, required_keys):
         preset_panel.AddRow(save_name_tb, btn_save, btn_delete)
         layout.AddRow(preset_panel)
 
+        # Vorschau-Option
+        layout.AddRow(None)
+        cb_preview = forms.CheckBox(); cb_preview.Text = "Vorschau vor Export anzeigen"; cb_preview.Checked = True
+        layout.AddRow(cb_preview)
+
         layout.AddRow(None)
         ok_btn = forms.Button(); ok_btn.Text = "OK"
         cancel_btn = forms.Button(); cancel_btn.Text = "Abbrechen"
@@ -503,17 +558,17 @@ def choose_export_options(cfg, required_keys):
         if not export_all_keys:
             selected_keys = [k for k, cb in key_cbx.items() if bool(cb.Checked)]
         if not has_types:
-            return [], use_standard, base_name, export_all_keys, selected_keys
+            return [], use_standard, base_name, export_all_keys, selected_keys, bool(cb_preview.Checked)
         selected_types = [n for n, c in cbx.items() if bool(c.Checked)]
         if (cb_all is not None and bool(cb_all.Checked)) or not selected_types:
-            return [], use_standard, base_name, export_all_keys, selected_keys
+            return [], use_standard, base_name, export_all_keys, selected_keys, bool(cb_preview.Checked)
         styles = []
         for t in selected_types:
             dim = types_cfg.get(t, {}).get("dimstyle")
             if dim:
                 styles.append(dim)
         print("[Export] Auswahl:", styles if styles else "Alle Typen", ", Pfad Standard?", use_standard, ", Name:", base_name)
-        return styles, use_standard, base_name, export_all_keys, selected_keys
+        return styles, use_standard, base_name, export_all_keys, selected_keys, bool(cb_preview.Checked)
     except Exception as e:
         print("[Export] Fehler im Dialog:", e)
         return None
@@ -653,6 +708,7 @@ def export_leader_texts(mode=None):
     base_name_override = None
     export_all_keys = True
     selected_keys = None
+    preview_before_export = True
     if picked is not None:
         if isinstance(picked, tuple) and len(picked) >= 3:
             styles = picked[0]
@@ -661,6 +717,8 @@ def export_leader_texts(mode=None):
             if len(picked) >= 5:
                 export_all_keys = bool(picked[3])
                 selected_keys = picked[4]
+            if len(picked) >= 6:
+                preview_before_export = bool(picked[5])
             target_styles = styles  # [] => export all
         elif isinstance(picked, list):
             target_styles = picked
@@ -782,6 +840,346 @@ def export_leader_texts(mode=None):
         print("Keine passenden Leader gefunden.")
         return
 
+    # finale Keys: zuerst required, dann zusätzlich entdeckte; ggf. durch Nutzerfilter einschränken
+    final_keys = list(required_keys)
+    for k in all_user_keys:
+        if k not in final_keys:
+            final_keys.append(k)
+    if not export_all_keys:
+        if selected_keys:
+            for k in selected_keys:
+                if k not in final_keys:
+                    final_keys.append(k)
+            final_keys = [k for k in final_keys if k in selected_keys]
+        else:
+            final_keys = []
+
+    # Optional: Vorschau anzeigen und Export bestätigen lassen
+    def show_preview_dialog(cfg, leaders, final_keys):
+        try:
+            import Eto.Forms as forms
+            import Eto.Drawing as drawing
+
+            dialog = forms.Dialog()
+            dialog.Title = "Vorschau – Export"
+            layout = forms.DynamicLayout()
+            layout.Spacing = drawing.Size(6, 6)
+            layout.Padding = drawing.Padding(10)
+            try:
+                dialog.ClientSize = drawing.Size(980, 600)
+            except Exception:
+                pass
+            try:
+                dialog.Resizable = True
+            except Exception:
+                pass
+
+            header_cols = ["text", "dimstyle"] + list(final_keys)
+            # Daten vorbereiten (Liste von Dicts)
+            rows = []
+            for item in leaders:
+                r = {"text": item.get("text", ""), "dimstyle": item.get("dimstyle", "")}
+                user = item.get("user") or {}
+                for k in final_keys:
+                    try:
+                        r[k] = "" if k not in user else ("" if user.get(k) is None else str(user.get(k)))
+                    except Exception:
+                        r[k] = ""
+                rows.append(r)
+
+            # Content-Bereich mit Scrollbar, Buttons bleiben unten fix
+            content_panel = forms.DynamicLayout(); content_panel.Spacing = drawing.Size(6, 6)
+            # Suchfeld (wirkt auf beide Ansichten) – direkt neben dem Label platzieren
+            search_lbl = forms.Label(); search_lbl.Text = "Suche:"
+            search_tb = forms.TextBox()
+            try:
+                search_tb.Size = drawing.Size(320, -1)
+            except Exception:
+                pass
+            # separate row mit trailing None hält Feld direkt neben Label links
+            try:
+                content_panel.AddSeparateRow(search_lbl, search_tb, None)
+            except Exception:
+                content_panel.AddRow(search_lbl, search_tb)
+
+            tabs = forms.TabControl()
+            content_panel.AddRow(tabs)
+
+            # 1) Stabile Listenansicht (kompakt)
+            try:
+                list_page = forms.TabPage()
+                list_page.Text = "Liste"
+                listbox = forms.ListBox()
+                compact_rows = []
+                for item in rows:
+                    try:
+                        pairs = []
+                        for k in final_keys:
+                            v = item.get(k, "")
+                            if v is None or str(v).strip() == "":
+                                continue
+                            pairs.append("{}={}".format(k, v))
+                        compact = "{} | {}{}".format(item.get("text", ""), item.get("dimstyle", ""), (" | "+" | ".join(pairs)) if pairs else "")
+                    except Exception:
+                        compact = str(item)
+                    compact_rows.append(compact)
+                listbox.DataStore = compact_rows
+                # Filterfunktion für Liste
+                def apply_filter_list():
+                    try:
+                        s = (search_tb.Text or "").strip().lower()
+                        if not s:
+                            listbox.DataStore = compact_rows
+                            return
+                        filtered = [r for r in compact_rows if s in r.lower()]
+                        listbox.DataStore = filtered
+                    except Exception:
+                        listbox.DataStore = compact_rows
+                search_tb.TextChanged += lambda s, e: apply_filter_list()
+                apply_filter_list()
+                # Scrollable für Liste
+                try:
+                    list_scroll = forms.Scrollable()
+                    list_scroll.Content = listbox
+                    try:
+                        list_scroll.ExpandContentWidth = True
+                        list_scroll.ExpandContentHeight = False
+                    except Exception:
+                        pass
+                    list_page.Content = list_scroll
+                except Exception:
+                    list_page.Content = listbox
+                tabs.Pages.Add(list_page)
+            except Exception:
+                pass
+
+            # 2) Tabellenansicht (Beta) – robust gebaut, kann fehlschlagen ohne Crash
+            grid = None
+            try:
+                grid_page = forms.TabPage(); grid_page.Text = "Tabelle"
+                # TreeGridView mit expliziten TreeGridItem-Objekten (Rhino8/Python3 stabil)
+                grid = forms.TreeGridView()
+                grid.ShowHeader = True
+                grid.AllowMultipleSelection = False
+                grid.Height = 420
+                try:
+                    grid.RowHeight = 22
+                except Exception:
+                    pass
+
+                # Abbildung Spalte -> Feldname ohne Tag nutzen (robuster für ältere Eto-Versionen)
+                try:
+                    # Sichtdaten (werden durch Suche gefiltert)
+                    row_data = list(rows)
+                    row_view_ref = {"data": row_data}
+
+                    # Spalten und Schlüssel in definierter Reihenfolge
+                    col_keys = ["text", "dimstyle"]
+                    def add_col(idx, name, width=None):
+                        col = forms.GridColumn()
+                        col.HeaderText = name
+                        try:
+                            if width:
+                                col.Width = width
+                        except Exception:
+                            pass
+                        col.Editable = False
+                        try:
+                            col.Sortable = True
+                        except Exception:
+                            pass
+                        col.DataCell = forms.TextBoxCell(idx)
+                        grid.Columns.Add(col)
+                    add_col(0, "text", 260)
+                    add_col(1, "dimstyle", 180)
+                    max_cols = 40
+                    for i, k in enumerate(final_keys):
+                        if i >= max_cols:
+                            break
+                        add_col(i + 2, k)
+                        col_keys.append(k)
+
+                    def build_store(data_rows):
+                        try:
+                            items = forms.TreeGridItemCollection()
+                        except Exception:
+                            items = None
+                        if items is None:
+                            # Hard fallback: build a simple collection-like object
+                            class _SimpleStore(list):
+                                pass
+                            items = _SimpleStore()
+                        for r in data_rows:
+                            try:
+                                vals = ["" if r.get(k) is None else str(r.get(k)) for k in col_keys]
+                            except Exception:
+                                vals = ["" for _ in col_keys]
+                            try:
+                                it = forms.TreeGridItem(vals)
+                            except Exception:
+                                it = forms.TreeGridItem()
+                                it.Values = vals
+                            try:
+                                items.Add(it)
+                            except Exception:
+                                items.append(it)
+                        return items
+
+                    # Sortierung per Spaltenkopf
+                    sort_state = {"key": None, "desc": False}
+                    def on_header_click(sender, e):
+                        try:
+                            # Spaltenindex ermitteln
+                            col_index = -1
+                            try:
+                                for i in range(len(grid.Columns)):
+                                    if grid.Columns[i] == e.Column:
+                                        col_index = i; break
+                            except Exception:
+                                col_index = -1
+                            if col_index < 0 or col_index >= len(col_keys):
+                                return
+                            key = col_keys[col_index]
+                            # Toggle Richtung
+                            if sort_state.get("key") == key:
+                                sort_state["desc"] = not bool(sort_state.get("desc", False))
+                            else:
+                                sort_state["key"] = key
+                                sort_state["desc"] = False
+
+                            data = list(row_view_ref.get("data") or [])
+                            def make_sort_tuple(val):
+                                try:
+                                    if val is None:
+                                        return (2, "")
+                                    s = str(val).strip()
+                                    # numerisch versuchen
+                                    try:
+                                        return (0, float(s.replace(",", ".")))
+                                    except Exception:
+                                        return (1, s.lower())
+                                except Exception:
+                                    return (2, "")
+                            try:
+                                data.sort(key=lambda r: make_sort_tuple(r.get(key)), reverse=bool(sort_state["desc"]))
+                            except Exception:
+                                pass
+                            row_view_ref["data"] = data
+                            grid.DataStore = build_store(data)
+                        except Exception:
+                            pass
+                    # Für TreeGridView existiert kein ColumnHeaderClick-Event in allen Builds; ersatzweise
+                    # klicken wir auf die Headers über Grid.Columns[i].HeaderClick, falls verfügbar.
+                    wired = False
+                    try:
+                        grid.ColumnHeaderClick += on_header_click
+                        wired = True
+                    except Exception:
+                        wired = False
+                    if not wired:
+                        try:
+                            for c in grid.Columns:
+                                try:
+                                    c.HeaderClick += on_header_click
+                                    wired = True
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+
+                    def apply_filter_grid():
+                        try:
+                            s = (search_tb.Text or "").strip().lower()
+                            if not s:
+                                row_view_ref["data"] = row_data
+                                grid.DataStore = build_store(row_view_ref["data"])
+                                return
+                            filtered_rows = []
+                            for r in row_data:
+                                try:
+                                    joined = " ".join([str(v) for v in r.values() if v is not None]).lower()
+                                    if s in joined:
+                                        filtered_rows.append(r)
+                                except Exception:
+                                    pass
+                            row_view_ref["data"] = filtered_rows
+                            grid.DataStore = build_store(filtered_rows)
+                        except Exception as _ex:
+                            row_view_ref["data"] = row_data
+                            grid.DataStore = build_store(row_view_ref["data"])
+                    search_tb.TextChanged += lambda s, e: apply_filter_grid()
+                    # Erste Füllung: vollständige Daten zuweisen
+                    row_view_ref["data"] = row_data
+                    grid.DataStore = build_store(row_view_ref["data"])
+
+                except Exception as grid_build_ex:
+                    print("[Preview] Tabellen-Setup fehlgeschlagen:", grid_build_ex)
+
+                # Scrollable für Tabelle
+                try:
+                    grid_scroll = forms.Scrollable()
+                    grid_scroll.Content = grid
+                    grid_scroll.ExpandContentWidth = True
+                    grid_scroll.ExpandContentHeight = False
+                    grid_page.Content = grid_scroll
+                except Exception:
+                    grid_page.Content = grid
+                tabs.Pages.Add(grid_page)
+            except Exception as grid_ex:
+                print("[Preview] Tabellenansicht deaktiviert:", grid_ex)
+
+            count_lbl = forms.Label();
+            try:
+                count_lbl.Text = "{} Leader in der Vorschau".format(len(leaders))
+            except Exception:
+                count_lbl.Text = "{} Leader in der Vorschau".format(len(leaders))
+            layout.AddRow(count_lbl)
+
+            # Content in Scrollable, Buttons bleiben sichtbar
+            try:
+                scroll = forms.Scrollable()
+                scroll.Content = content_panel
+                scroll.ExpandContentWidth = True
+                scroll.ExpandContentHeight = False
+                layout.AddRow(scroll)
+            except Exception:
+                layout.AddRow(content_panel)
+
+            btn_export = forms.Button(); btn_export.Text = "Exportieren"
+            btn_cancel = forms.Button(); btn_cancel.Text = "Abbrechen"
+            def on_export(sender, e):
+                dialog.Tag = True
+                dialog.Close()
+            def on_cancel(sender, e):
+                dialog.Tag = False
+                dialog.Close()
+            btn_export.Click += on_export; btn_cancel.Click += on_cancel
+            layout.AddSeparateRow(None, btn_export, btn_cancel)
+
+            dialog.Content = layout
+            dialog.Tag = False
+            # Stabil: erst SemiModal versuchen, dann Modal als Fallback
+            try:
+                Rhino.UI.EtoExtensions.ShowSemiModal(dialog, sc.doc, Rhino.UI.RhinoEtoApp.MainWindow)
+            except Exception:
+                try:
+                    dialog.ShowModal()
+                except Exception:
+                    try:
+                        dialog.ShowModal(Rhino.UI.RhinoEtoApp.MainWindow)
+                    except Exception:
+                        return True
+            return bool(dialog.Tag)
+        except Exception as e:
+            print("[Preview] Fehler beim Aufbau der Vorschau:", e)
+            return True
+
+    if preview_before_export:
+        proceed = show_preview_dialog(cfg, leaders, final_keys)
+        if not proceed:
+            print("[Export] Abgebrochen nach Vorschau.")
+            return
+
     # Zielformat bestimmen
     if mode is None:
         mode = (cfg.get("logging", {}).get("mode") or "csv").lower()
@@ -835,22 +1233,6 @@ def export_leader_texts(mode=None):
             import xlsxwriter
 
             na_value = cfg.get("export", {}).get("na_value", "NA")
-
-            # finale Keys: zuerst required, dann zusätzlich gefundene
-            final_keys = list(required_keys)
-            for k in all_user_keys:
-                if k not in final_keys:
-                    final_keys.append(k)
-            # Falls der Nutzer Key-Filter gesetzt hat, anwenden
-            if not export_all_keys:
-                if selected_keys:
-                    # sicherstellen, dass ausgewählte Keys vorhanden sind (auch wenn nicht entdeckt)
-                    for k in selected_keys:
-                        if k not in final_keys:
-                            final_keys.append(k)
-                    final_keys = [k for k in final_keys if k in selected_keys]
-                else:
-                    final_keys = []
 
             header = ["text", "dimstyle"] + final_keys
 
