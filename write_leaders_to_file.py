@@ -877,6 +877,38 @@ def export_leader_texts(mode=None):
             header_cols = ["text", "dimstyle"] + list(final_keys)
             # Daten vorbereiten (Liste von Dicts)
             rows = []
+            guid_to_row = {}
+            guid_to_leader = {}
+            pending_changes = {}
+            def add_pending(guid_text, key, value):
+                try:
+                    if not guid_text or key in ("text", "dimstyle", "LeaderGUID"):
+                        return
+                    if guid_text not in pending_changes:
+                        pending_changes[guid_text] = {}
+                    pending_changes[guid_text][key] = "" if value is None else str(value)
+                    try:
+                        if pending_count_lbl is not None:
+                            total = sum(len(v) for v in pending_changes.values())
+                            pending_count_lbl.Text = "Änderungen: {}".format(total)
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+            try:
+                for it in leaders:
+                    try:
+                        gtxt = None
+                        try:
+                            gtxt = it.get("user", {}).get("LeaderGUID")
+                        except Exception:
+                            gtxt = None
+                        if gtxt:
+                            guid_to_leader[str(gtxt)] = it
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             for item in leaders:
                 r = {"text": item.get("text", ""), "dimstyle": item.get("dimstyle", "")}
                 user = item.get("user") or {}
@@ -894,6 +926,8 @@ def export_leader_texts(mode=None):
                     r["LeaderGUID"] = str(guid_val)
                 r["_guid"] = None if guid_val is None else str(guid_val)
                 rows.append(r)
+                if r.get("_guid"):
+                    guid_to_row[r.get("_guid")] = r
 
             # Content-Bereich mit Scrollbar, Buttons bleiben unten fix
             content_panel = forms.DynamicLayout(); content_panel.Spacing = drawing.Size(6, 6)
@@ -991,7 +1025,11 @@ def export_leader_texts(mode=None):
                                 col.Width = width
                         except Exception:
                             pass
-                        col.Editable = False
+                        # Editable nur für UserText-Keys (nicht für text/dimstyle/LeaderGUID)
+                        try:
+                            col.Editable = (name not in ("text", "dimstyle", "LeaderGUID"))
+                        except Exception:
+                            pass
                         try:
                             col.Sortable = True
                         except Exception:
@@ -1110,6 +1148,245 @@ def export_leader_texts(mode=None):
                         except Exception:
                             pass
 
+                    # Unterschiede zwischen sichtbaren Zellenwerten und Baseline zählen
+                    def update_change_counter():
+                        try:
+                            # Index der GUID-Spalte ermitteln
+                            try:
+                                guid_idx = col_keys.index("LeaderGUID")
+                            except Exception:
+                                guid_idx = -1
+                            if guid_idx < 0:
+                                return
+                            # DataStore lesen
+                            try:
+                                datastore = grid.DataStore
+                            except Exception:
+                                datastore = None
+                            if datastore is None:
+                                return
+                            changes = 0
+                            for item in datastore:
+                                try:
+                                    vals = item.Values
+                                except Exception:
+                                    vals = None
+                                if vals is None or guid_idx >= len(vals):
+                                    continue
+                                guid_text = vals[guid_idx]
+                                base_row = guid_to_row.get(guid_text)
+                                if not base_row:
+                                    continue
+                                for idx, key in enumerate(col_keys):
+                                    if key in ("text", "dimstyle", "LeaderGUID"):
+                                        continue
+                                    new_val = vals[idx] if idx < len(vals) else ""
+                                    old_val = base_row.get(key, "")
+                                    if str(new_val) != str(old_val):
+                                        changes += 1
+                            try:
+                                pending_count_lbl.Text = "Änderungen: {}".format(changes)
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
+
+                    # Start der Bearbeitung: schütze schreibgeschützte Spalten
+                    def on_cell_editing(sender, e):
+                        try:
+                            col_index = -1
+                            try:
+                                for i in range(len(grid.Columns)):
+                                    if grid.Columns[i] == e.Column:
+                                        col_index = i; break
+                            except Exception:
+                                col_index = -1
+                            if col_index < 0 or col_index >= len(col_keys):
+                                return
+                            key = col_keys[col_index]
+                            if key in ("text", "dimstyle", "LeaderGUID"):
+                                try:
+                                    e.Cancel = True
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+                    try:
+                        grid.CellEditing += on_cell_editing
+                    except Exception:
+                        pass
+
+                    # Zellenbearbeitung → in Rhino-Objekt (UserText) und lokale Daten zurückschreiben
+                    def on_cell_edited(sender, e):
+                        try:
+                            # Spaltenindex bestimmen
+                            col_index = -1
+                            try:
+                                for i in range(len(grid.Columns)):
+                                    if grid.Columns[i] == e.Column:
+                                        col_index = i; break
+                            except Exception:
+                                col_index = -1
+                            if col_index < 0 or col_index >= len(col_keys):
+                                return
+                            key = col_keys[col_index]
+                            # nicht editierbare Felder ignorieren
+                            if key in ("text", "dimstyle", "LeaderGUID"):
+                                return
+                            vals = None
+                            try:
+                                vals = e.Item.Values
+                            except Exception:
+                                vals = None
+                            if vals is None:
+                                return
+                            new_val = None
+                            if col_index < len(vals):
+                                new_val = vals[col_index]
+                            guid_text = None
+                            try:
+                                gidx = col_keys.index("LeaderGUID")
+                                if gidx < len(vals):
+                                    guid_text = vals[gidx]
+                            except Exception:
+                                guid_text = None
+                            if not guid_text:
+                                # Fallback über Textspalte → Baseline suchen
+                                try:
+                                    t_idx = col_keys.index("text")
+                                    row_txt = vals[t_idx] if t_idx < len(vals) else None
+                                    if row_txt:
+                                        for r in (row_view_ref.get("data") or []):
+                                            if r.get("text") == row_txt and r.get("_guid"):
+                                                guid_text = r.get("_guid"); break
+                                except Exception:
+                                    guid_text = None
+                            if not guid_text:
+                                return
+                            # pending Merker; tatsächliches Schreiben via Commit-Button
+                            add_pending(guid_text, key, new_val)
+                            try:
+                                # Schreibe explizit wieder in die Item-Values, falls der Editor nicht committed hat
+                                e.Item.Values = vals
+                            except Exception:
+                                pass
+                            try:
+                                update_change_counter()
+                            except Exception:
+                                pass
+                            # Baseline nicht sofort verändern (damit Commit Unterschiede erkennt)
+                        except Exception:
+                            pass
+                    try:
+                        grid.CellEdited += on_cell_edited
+                    except Exception:
+                        pass
+
+                    # Alternativ: Doppelklick öffnet kleines Eingabefeld zur Bearbeitung
+                    def prompt_value(title, initial):
+                        try:
+                            import Eto.Forms as forms
+                            import Eto.Drawing as drawing
+                            dlg = forms.Dialog()
+                            dlg.Title = title
+                            layout = forms.DynamicLayout(); layout.Padding = drawing.Padding(10); layout.Spacing = drawing.Size(6,6)
+                            tb = forms.TextBox(); tb.Text = "" if initial is None else str(initial)
+                            layout.AddRow(tb)
+                            okb = forms.Button(); okb.Text = "OK"
+                            cb = forms.Button(); cb.Text = "Abbrechen"
+                            def _ok(s,ev): dlg.Tag = tb.Text; dlg.Close()
+                            def _cb(s,ev): dlg.Tag = None; dlg.Close()
+                            okb.Click += _ok; cb.Click += _cb
+                            layout.AddSeparateRow(None, okb, cb)
+                            dlg.Content = layout; dlg.Tag = None
+                            try:
+                                dlg.ShowModal()
+                            except Exception:
+                                try:
+                                    Rhino.UI.EtoExtensions.ShowSemiModal(dlg, sc.doc, Rhino.UI.RhinoEtoApp.MainWindow)
+                                except Exception:
+                                    dlg.ShowModal(Rhino.UI.RhinoEtoApp.MainWindow)
+                            return dlg.Tag
+                        except Exception:
+                            return None
+
+                    def on_cell_double(sender, e):
+                        try:
+                            r = e.Row; col = e.Column
+                            if r is None or col is None:
+                                return
+                            # Spaltenindex und Key
+                            col_index = -1
+                            try:
+                                for i in range(len(grid.Columns)):
+                                    if grid.Columns[i] == col:
+                                        col_index = i; break
+                            except Exception:
+                                col_index = -1
+                            if col_index < 0 or col_index >= len(col_keys):
+                                return
+                            key = col_keys[col_index]
+                            if key in ("text", "dimstyle", "LeaderGUID"):
+                                return
+                            item = e.Item
+                            if item is None:
+                                return
+                            vals = None
+                            try:
+                                vals = item.Values
+                            except Exception:
+                                vals = None
+                            if vals is None:
+                                return
+                            current = vals[col_index] if col_index < len(vals) else ""
+                            new_val = prompt_value("Wert bearbeiten", current)
+                            if new_val is None:
+                                return
+                            # schreibe in UI-Item (damit Commit-Vergleich greift)
+                            try:
+                                if col_index < len(vals):
+                                    vals[col_index] = new_val
+                                else:
+                                    return
+                            except Exception:
+                                pass
+                            # GUID holen
+                            guid_text = None
+                            try:
+                                gidx = col_keys.index("LeaderGUID")
+                                if gidx < len(vals):
+                                    guid_text = vals[gidx]
+                            except Exception:
+                                guid_text = None
+                            if not guid_text:
+                                # Fallback über Textspalte → Baseline suchen
+                                try:
+                                    t_idx = col_keys.index("text")
+                                    row_txt = vals[t_idx] if t_idx < len(vals) else None
+                                    if row_txt:
+                                        for r in (row_view_ref.get("data") or []):
+                                            if r.get("text") == row_txt and r.get("_guid"):
+                                                guid_text = r.get("_guid"); break
+                                except Exception:
+                                    guid_text = None
+                            if guid_text:
+                                add_pending(guid_text, key, new_val)
+                                update_change_counter()
+                        except Exception:
+                            pass
+                    # Binde Doppelklick-Event
+                    bound = False
+                    try:
+                        grid.CellDoubleClick += on_cell_double
+                        bound = True
+                    except Exception:
+                        bound = False
+                    if not bound:
+                        try:
+                            grid.DoubleClick += on_cell_double
+                        except Exception:
+                            pass
+
                     def apply_filter_grid():
                         try:
                             s = (search_tb.Text or "").strip().lower()
@@ -1171,6 +1448,28 @@ def export_leader_texts(mode=None):
             btn_export = forms.Button(); btn_export.Text = "Exportieren"
             btn_cancel = forms.Button(); btn_cancel.Text = "Abbrechen"
             btn_show = forms.Button(); btn_show.Text = "Element anzeigen"
+            btn_commit = forms.Button(); btn_commit.Text = "Commit Changes"
+            pending_count_lbl = forms.Label(); pending_count_lbl.Text = "Änderungen: 0"
+            # Periodischer Refresh des Änderungscounters (falls Edit-Events nicht feuern)
+            try:
+                import Eto.Forms as forms
+                changes_timer = forms.UITimer()
+                try:
+                    changes_timer.Interval = 0.5
+                except Exception:
+                    pass
+                def _tick(s, e):
+                    try:
+                        update_change_counter()
+                    except Exception:
+                        pass
+                changes_timer.Elapsed += _tick
+                try:
+                    changes_timer.Start()
+                except Exception:
+                    pass
+            except Exception:
+                pass
             def on_export(sender, e):
                 dialog.Tag = True
                 dialog.Close()
@@ -1235,7 +1534,100 @@ def export_leader_texts(mode=None):
                 btn_show.Click += on_show
             except Exception:
                 pass
-            layout.AddSeparateRow(None, btn_show, btn_export, btn_cancel)
+            def on_commit(sender, e):
+                try:
+                    total = 0
+                    # 1) Änderungen aus DataStore direkt ermitteln (robust, unabhängig von Edit-Events)
+                    try:
+                        gidx = col_keys.index("LeaderGUID")
+                    except Exception:
+                        gidx = -1
+                    try:
+                        ds = grid.DataStore
+                    except Exception:
+                        ds = None
+                    if ds is not None and gidx >= 0:
+                        try:
+                            import System
+                            for it in ds:
+                                try:
+                                    vals = it.Values
+                                except Exception:
+                                    vals = None
+                                if vals is None or gidx >= len(vals):
+                                    continue
+                                gtxt = vals[gidx]
+                                if not gtxt:
+                                    continue
+                                try:
+                                    obj_id = System.Guid(gtxt)
+                                except Exception:
+                                    obj_id = None
+                                if obj_id is None:
+                                    continue
+                                # Vergleiche alle editierbaren Spalten
+                                for c_index, key in enumerate(col_keys):
+                                    if key in ("text", "dimstyle", "LeaderGUID"):
+                                        continue
+                                    new_val = vals[c_index] if c_index < len(vals) else ""
+                                    old_val = None
+                                    try:
+                                        row = guid_to_row.get(gtxt)
+                                        if row is not None:
+                                            old_val = row.get(key, "")
+                                    except Exception:
+                                        old_val = None
+                                    if str(new_val) != str(old_val):
+                                        try:
+                                            rs.SetUserText(obj_id, key, "" if new_val is None else str(new_val))
+                                            total += 1
+                                        except Exception:
+                                            pass
+                                        try:
+                                            if row is not None:
+                                                row[key] = "" if new_val is None else str(new_val)
+                                        except Exception:
+                                            pass
+                                        try:
+                                            li = guid_to_leader.get(gtxt)
+                                            if li is not None:
+                                                li.get("user", {})[key] = "" if new_val is None else str(new_val)
+                                        except Exception:
+                                            pass
+                        except Exception:
+                            pass
+                    # 2) Zusätzlich noch event-basierte pending_changes abarbeiten (falls vorhanden)
+                    for gtxt, kv in list(pending_changes.items()):
+                        try:
+                            import System
+                            obj_id = System.Guid(gtxt)
+                        except Exception:
+                            obj_id = None
+                        if obj_id is None:
+                            continue
+                        for k, v in kv.items():
+                            try:
+                                rs.SetUserText(obj_id, k, v)
+                                total += 1
+                            except Exception:
+                                pass
+                    # Clear nach Commit
+                    pending_changes.clear()
+                    try:
+                        pending_count_lbl.Text = "Änderungen: 0"
+                    except Exception:
+                        pass
+                    try:
+                        print("[Preview] Commit: {} Werte in UserText geschrieben.".format(total))
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+            try:
+                btn_commit.Click += on_commit
+            except Exception:
+                pass
+            layout.AddSeparateRow(None, pending_count_lbl, btn_show, btn_commit, btn_export, btn_cancel)
 
             dialog.Content = layout
             dialog.Tag = False
