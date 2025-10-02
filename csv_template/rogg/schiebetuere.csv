@@ -21,7 +21,7 @@ Mauerlichthöhe_Massaufnahme_ab_MtR,NA
 Mauerlichthöhe_plan,NA
 Mauerstärke_Massaufnahme,NA
 Mauerstärke_plan,150
-Montageart,Schiebetüre Rahmen
+Montageart,Gemörtelt
 Muschelgriff_typ, Hoppe M471 Nr.5 BL Aluminium
 NPK_Pos.,NA
 Rahmenfalzbreite,NA
@@ -45,6 +45,7 @@ Türblattkern,LS
 Türblatttyp,NA
 Türschliesser,NA
 Umfassungstyp,Zarge
+Zargen Bemerkung,NA
 Zargen E-Mass,1043
 Zargen-Profil,SCH2.OPK80
 Zargenfalzbreite,NA

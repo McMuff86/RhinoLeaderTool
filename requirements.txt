@@ -1,0 +1,10 @@
+# RhinoLeaderTool Python dependencies
+# Note: Rhino's IronPython may not support pip installs; use CPython-based Rhino (Rhino 7+ CPython plugin) or external scripts where needed.
+
+# Excel writing
+xlsxwriter>=3.1.2
+
+# Optional: CSV/Excel parsing outside Rhino
+openpyxl>=3.1.2
+
+

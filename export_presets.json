@@ -1,0 +1,126 @@
+{
+  "Schiebetüre": {
+    "all_keys": false,
+    "keys": [
+      "Bandseite",
+      "Bandtyp",
+      "Lichtbreite",
+      "Lichthöhe",
+      "Montageart",
+      "Muschelgriff_typ",
+      "Schwelle",
+      "Schwellentyp",
+      "Türblattdicke",
+      "Türblatttyp",
+      "Zargen E-Mass",
+      "Zargen-Profil",
+      "Zargentiefe"
+    ],
+    "types_all": false,
+    "types": [
+      "schiebetuere"
+    ]
+  },
+  "Zargentüre": {
+    "all_keys": false,
+    "keys": [
+      "Bandseite",
+      "Bandtyp",
+      "Bodeneinstand",
+      "Brandschutz",
+      "Lichtbreite",
+      "Lichthöhe",
+      "Maueraufbau_Bandseite",
+      "Maueraufbau_Futterseite",
+      "Mauerlichtbreite_plan",
+      "Mauerlichthöhe_plan",
+      "Mauerstärke_plan",
+      "Montageart",
+      "Muschelgriff_typ",
+      "Schliessblechtyp",
+      "Schloss",
+      "Schwelle",
+      "Schwellentyp",
+      "Türblatt_Falzbreite",
+      "Türblatt_Falztiefe",
+      "Türblatt_Farbe_Bandseite",
+      "Türblatt_Farbe_Futterseite",
+      "Türblattdicke",
+      "Türblattkanten",
+      "Türblattkern",
+      "Türblatttyp",
+      "Umfassungstyp",
+      "Zargen E-Mass",
+      "Zargen-Profil",
+      "Zargenfalzbreite",
+      "Zargenfalztiefe",
+      "Zargentiefe"
+    ],
+    "types_all": false,
+    "types": [
+      "zargentuere"
+    ]
+  },
+  "Schiebetüre_2": {
+    "all_keys": false,
+    "keys": [
+      "Bandseite",
+      "Bandtyp",
+      "Lichtbreite",
+      "Lichthöhe",
+      "Montageart",
+      "Muschelgriff_typ",
+      "Schwelle",
+      "Schwellentyp",
+      "Türblattdicke",
+      "Türblatttyp",
+      "Zargen E-Mass",
+      "Zargen-Profil",
+      "Zargentiefe"
+    ],
+    "types_all": false,
+    "types": [
+      "schiebetuere"
+    ]
+  },
+  "Zargentüre_2": {
+    "all_keys": false,
+    "keys": [
+      "Bandseite",
+      "Bandtyp",
+      "Bodeneinstand",
+      "Brandschutz",
+      "Lichtbreite",
+      "Lichthöhe",
+      "Maueraufbau_Bandseite",
+      "Maueraufbau_Futterseite",
+      "Mauerlichtbreite_plan",
+      "Mauerlichthöhe_plan",
+      "Mauerstärke_plan",
+      "Montageart",
+      "Muschelgriff_typ",
+      "Schliessblechtyp",
+      "Schloss",
+      "Schwelle",
+      "Schwellentyp",
+      "Türblatt_Falzbreite",
+      "Türblatt_Falztiefe",
+      "Türblatt_Farbe_Bandseite",
+      "Türblatt_Farbe_Futterseite",
+      "Türblattdicke",
+      "Türblattkanten",
+      "Türblattkern",
+      "Türblatttyp",
+      "Umfassungstyp",
+      "Zargen E-Mass",
+      "Zargen-Profil",
+      "Zargenfalzbreite",
+      "Zargenfalztiefe",
+      "Zargentiefe"
+    ],
+    "types_all": false,
+    "types": [
+      "zargentuere"
+    ]
+  }
+}

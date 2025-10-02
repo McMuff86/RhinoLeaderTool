@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "description": "Sorting rules for leader floor order. First matching pattern determines rank.",
+  "patterns": [
+    { "name": "Basement UG with number", "regex": "(?i)\\bUG\\s*([-+]?\\d+)", "group": 1, "base": -1000 },
+    { "name": "Basement UG no number", "regex": "(?i)\\bUG\\b", "rank": -999 },
+    { "name": "Ground floor EG", "regex": "(?i)\\bEG\\b", "rank": 0 },
+    { "name": "E-coded floors", "regex": "(?i)\\bE\\s*([-+]?\\d+)", "group": 1, "base": 0 },
+    { "name": "Ordinal OG floors", "regex": "(?i)\\b([0-9]+)\\s*OG\\b", "group": 1, "base": 0 }
+  ],
+  "fallback": {
+    "extract_int": true,
+    "fallback_rank": 10000
+  }
+}
+
+

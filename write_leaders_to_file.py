@@ -3,26 +3,29 @@
 import rhinoscriptsyntax as rs
 import scriptcontext as sc
 import Rhino
+import Rhino.UI
 import os
 import json
+import re
 from collections import defaultdict
 
 
 def load_config():
     user_dir = os.path.expanduser("~")
-    base_path = os.path.join(user_dir, "repos", "work", "library", "RhinoLeaderTool")
+    base_path = os.path.join(user_dir, "source", "repos", "work", "library", "RhinoLeaderTool")
     cfg_path = os.path.join(base_path, "config.json")
     default = {
         "logging": {"mode": "xlsx"},
         "export": {
             "target_styles": [
-                "Standard 1:10 Rahmenbeschriftung",
-                "Standard 1:10 Rahmenbeschriftung WHG Eingang",
-                "Standard 1:10 Zargenbeschriftung",
-                "Standard 1:10 Schiebetürbeschriftung",
-                "Standard 1:10 Spez.Rahmenbeschriftung"
+        "Standard 1:10 Rahmenbeschriftung",
+        "Standard 1:10 Rahmenbeschriftung WHG Eingang",
+        "Standard 1:10 Zargenbeschriftung",
+        "Standard 1:10 Schiebetürbeschriftung",
+        "Standard 1:10 Spez.Rahmenbeschriftung"
             ],
-            "na_value": "NA"
+            "na_value": "NA",
+            "floor_sort": True
         }
     }
     try:
@@ -37,7 +40,7 @@ def load_config():
 
 def get_base_path(cfg):
     user_dir = os.path.expanduser("~")
-    default_base = os.path.join(user_dir, "repos", "work", "library", "RhinoLeaderTool")
+    default_base = os.path.join(user_dir, "source", "repos", "work", "library", "RhinoLeaderTool")
     cfg_base = cfg.get("base_path") if isinstance(cfg, dict) else None
     return cfg_base if (cfg_base and os.path.isdir(cfg_base)) else default_base
 
@@ -134,6 +137,387 @@ def compute_required_keys_from_config(cfg):
         pass
     return required
 
+def get_presets_store_path(cfg):
+    try:
+        base_dir = get_base_path(cfg)
+        return os.path.join(base_dir, "export_presets.json")
+    except Exception:
+        return os.path.join(os.path.expanduser("~"), "export_presets.json")
+
+def load_export_presets(cfg):
+    # Bevorzugt aus globaler JSON-Datei; migriert ggf. bestehende DocData-Presets
+    try:
+        path = get_presets_store_path(cfg)
+        if os.path.isfile(path):
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        pass
+    # Migration aus DocData (falls vorhanden)
+    try:
+        section = "RhinoLeaderToolExportPresets"
+        key = "KeySelectionPresets"
+        docdata = rs.GetDocumentData(section, key)
+        if docdata:
+            try:
+                migrated = json.loads(docdata)
+                if isinstance(migrated, dict):
+                    save_export_presets(cfg, migrated)
+                    return migrated
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return {}
+
+def save_export_presets(cfg, presets):
+    try:
+        path = get_presets_store_path(cfg)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(presets or {}, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+def choose_export_options(cfg, required_keys):
+    try:
+        print("[Export] Öffne Export-Dialog…")
+        import Eto.Forms as forms
+        import Eto.Drawing as drawing
+
+        types_cfg = (cfg.get("types") or {})
+        type_names = list(types_cfg.keys())
+        has_types = bool(type_names)
+
+        dialog = forms.Dialog()
+        dialog.Title = "Export – Optionen"
+        layout = forms.DynamicLayout()
+        layout.Spacing = drawing.Size(6, 6)
+        layout.Padding = drawing.Padding(10)
+
+        cb_all = None
+        cbx = {}
+        if has_types:
+            # 'Alle' Checkbox
+            cb_all = forms.CheckBox()
+            cb_all.Text = "Alle Typen"
+            cb_all.Checked = True
+            layout.AddRow(cb_all)
+
+            # Typen-Checkboxen
+            for name in type_names:
+                cb = forms.CheckBox(); cb.Text = name
+                cb.Checked = False
+                cbx[name] = cb
+                layout.AddRow(cb)
+
+            def on_all_changed(sender, e):
+                if bool(cb_all.Checked):
+                    for n, c in cbx.items():
+                        c.Checked = False
+            cb_all.CheckedChanged += on_all_changed
+
+            # Wenn ein einzelner Typ gewählt wird, 'Alle Typen' automatisch deaktivieren
+            def make_on_type_changed(ctrl):
+                def _handler(sender, e):
+                    try:
+                        if bool(ctrl.Checked) and cb_all is not None and bool(cb_all.Checked):
+                            cb_all.Checked = False
+                    except Exception:
+                        pass
+                return _handler
+            for _n, _c in cbx.items():
+                _c.CheckedChanged += make_on_type_changed(_c)
+
+        # Export-Ziel (Desktop vs. Dokumentordner)
+        layout.AddRow(None)
+        rb_panel = forms.DynamicLayout(); rb_panel.Spacing = drawing.Size(6, 6)
+        rb_desktop = forms.RadioButton(); rb_desktop.Text = "Desktop (Standardpfad)"
+        rb_doc = forms.RadioButton(); rb_doc.Text = "Ordner der 3dm-Datei"
+        rb_desktop.Checked = True
+        # Gruppieren: nur rb_doc an rb_desktop anhängen
+        try:
+            rb_doc.Group = rb_desktop
+        except Exception:
+            pass
+        rb_panel.AddRow(rb_desktop)
+        rb_panel.AddRow(rb_doc)
+        lbl_path = forms.Label(); lbl_path.Text = "Zielpfad:"
+        layout.AddRow(lbl_path, rb_panel)
+
+        # Dateiname ohne Endung
+        doc_name = sc.doc.Name or "leader"
+        default_base = os.path.splitext(doc_name)[0] or "leader"
+        name_tb = forms.TextBox(); name_tb.Text = default_base
+        lbl_name = forms.Label(); lbl_name.Text = "Dateiname (ohne Endung):"
+        layout.AddRow(lbl_name, name_tb)
+
+        # Key-Auswahl (zweispaltig + scrollbar)
+        layout.AddRow(None)
+        keys_panel = forms.DynamicLayout(); keys_panel.Spacing = drawing.Size(6, 6)
+        cb_all_keys = forms.CheckBox(); cb_all_keys.Text = "Alle UserText-Keys exportieren"; cb_all_keys.Checked = True
+        keys_panel.AddRow(cb_all_keys)
+        key_cbx = {}
+        sorted_keys = sorted(required_keys)
+        # Spalten aufteilen
+        mid = (len(sorted_keys) + 1) // 2
+        left_keys = sorted_keys[:mid]
+        right_keys = sorted_keys[mid:]
+        col_left = forms.DynamicLayout(); col_left.Spacing = drawing.Size(4, 4)
+        col_right = forms.DynamicLayout(); col_right.Spacing = drawing.Size(4, 4)
+        for k in left_keys:
+            cbk = forms.CheckBox(); cbk.Text = k; cbk.Checked = True
+            key_cbx[k] = cbk
+            col_left.AddRow(cbk)
+        for k in right_keys:
+            cbk = forms.CheckBox(); cbk.Text = k; cbk.Checked = True
+            key_cbx[k] = cbk
+            col_right.AddRow(cbk)
+        cols_container = forms.DynamicLayout(); cols_container.Spacing = drawing.Size(12, 6)
+        cols_container.AddRow(col_left, col_right)
+        scroll = forms.Scrollable(); scroll.Content = cols_container
+        try:
+            scroll.ExpandContentWidth = True
+            scroll.ExpandContentHeight = False
+        except Exception:
+            pass
+        try:
+            scroll.Size = drawing.Size(420, 420)
+        except Exception:
+            pass
+        def on_all_keys_changed(sender, e):
+            all_on = bool(cb_all_keys.Checked)
+            for _k, _cb in key_cbx.items():
+                _cb.Enabled = not all_on
+        cb_all_keys.CheckedChanged += on_all_keys_changed
+        on_all_keys_changed(None, None)
+        # Schnellaktionen
+        btn_row = forms.DynamicLayout(); btn_row.Spacing = drawing.Size(6, 6)
+        btn_all = forms.Button(); btn_all.Text = "Alle auswählen"
+        btn_none = forms.Button(); btn_none.Text = "Keine auswählen"
+        def on_select_all(sender, e):
+            for _k, _cb in key_cbx.items():
+                _cb.Checked = True
+        def on_select_none(sender, e):
+            for _k, _cb in key_cbx.items():
+                _cb.Checked = False
+        btn_all.Click += on_select_all; btn_none.Click += on_select_none
+        btn_row.AddRow(btn_all, btn_none, None)
+        lbl_keys = forms.Label(); lbl_keys.Text = "UserText-Keys:"
+        keys_panel.AddRow(lbl_keys, scroll)
+        keys_panel.AddRow(btn_row)
+        layout.AddRow(keys_panel)
+
+        # Presets
+        layout.AddRow(None)
+        presets = load_export_presets(cfg)
+        preset_names = sorted(presets.keys())
+        preset_panel = forms.DynamicLayout(); preset_panel.Spacing = drawing.Size(6, 6)
+        preset_combo = forms.ComboBox()
+        preset_combo.DataStore = preset_names
+        preset_combo.SelectedIndex = 0 if len(preset_names) > 0 else -1
+        def get_selected_preset_name():
+            try:
+                txt = preset_combo.Text or ""
+                if txt and txt in preset_combo.DataStore:
+                    return txt
+            except Exception:
+                pass
+            try:
+                idx = preset_combo.SelectedIndex
+                if idx is not None and idx >= 0:
+                    # DataStore kann ein .NET IEnumerable sein → in Liste umwandeln
+                    try:
+                        ds_list = list(preset_combo.DataStore)
+                        if idx < len(ds_list):
+                            return ds_list[idx]
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            return None
+        def apply_preset_by_name(pname):
+            local = load_export_presets(cfg)
+            p = local.get(pname)
+            if not isinstance(p, dict):
+                return
+            use_all = bool(p.get("all_keys", p.get("all", False)))
+            cb_all_keys.Checked = use_all
+            if not use_all:
+                wanted = set(p.get("keys") or [])
+                for _k, _cb in key_cbx.items():
+                    _cb.Checked = (_k in wanted)
+            on_all_keys_changed(None, None)
+            # Typen aus Preset übernehmen (falls vorhanden)
+            if has_types:
+                types_all = bool(p.get("types_all", False))
+                preset_types = p.get("types") or []
+                if types_all or not preset_types:
+                    cb_all.Checked = True
+                    on_all_changed(None, None)
+                else:
+                    cb_all.Checked = False
+                    wanted_types = set(preset_types)
+                    for _name, _cb in cbx.items():
+                        _cb.Checked = (_name in wanted_types)
+            try:
+                dialog.Invalidate()
+            except Exception:
+                pass
+        def on_preset_changed(sender, e):
+            try:
+                name = get_selected_preset_name()
+                if not name:
+                    return
+                apply_preset_by_name(name)
+            except Exception:
+                pass
+        preset_combo.SelectedIndexChanged += on_preset_changed
+        # Falls es genau ein Preset gibt, direkt Auswahl in die UI übernehmen
+        try:
+            if len(preset_names) == 1:
+                apply_preset_by_name(preset_names[0])
+        except Exception:
+            pass
+
+        save_name_tb = forms.TextBox(); save_name_tb.Text = ""
+        btn_save = forms.Button(); btn_save.Text = "Preset speichern"
+        btn_delete = forms.Button(); btn_delete.Text = "Preset löschen"
+        def on_save(sender, e):
+            name = (save_name_tb.Text or "").strip()
+            if not name:
+                return
+            try:
+                sel_all = bool(cb_all_keys.Checked)
+                sel_keys = [k for k, cb in key_cbx.items() if bool(cb.Checked)]
+                # Typen erfassen
+                types_all = True
+                sel_types = []
+                if has_types:
+                    types_all = bool(cb_all.Checked)
+                    if not types_all:
+                        sel_types = [t for t, c in cbx.items() if bool(c.Checked)]
+                        if not sel_types:
+                            types_all = True
+                entry = {
+                    "all_keys": bool(sel_all),
+                    "keys": sel_keys if not sel_all else [],
+                    "types_all": bool(types_all),
+                    "types": sel_types if not types_all else [],
+                }
+                local = load_export_presets(cfg)
+                local[name] = entry
+                save_export_presets(cfg, local)
+                # refresh combo
+                new_names = sorted(local.keys())
+                preset_combo.DataStore = new_names
+                try:
+                    preset_combo.SelectedIndex = new_names.index(name)
+                except Exception:
+                    preset_combo.SelectedIndex = -1
+                # sofort anwenden
+                apply_preset_by_name(name)
+            except Exception:
+                pass
+        def on_delete(sender, e):
+            try:
+                pname = get_selected_preset_name()
+                if not pname:
+                    return
+                local = load_export_presets(cfg)
+                if pname in local:
+                    del local[pname]
+                    save_export_presets(cfg, local)
+                    new_names = sorted(local.keys())
+                    preset_combo.DataStore = new_names
+                    preset_combo.SelectedIndex = -1
+            except Exception:
+                pass
+        btn_save.Click += on_save; btn_delete.Click += on_delete
+        lbl_presets = forms.Label(); lbl_presets.Text = "Presets:"
+        btn_load = forms.Button(); btn_load.Text = "Preset laden"
+        def on_load(sender, e):
+            try:
+                idx = preset_combo.SelectedIndex
+                if idx is None or idx < 0:
+                    return
+                ds = preset_combo.DataStore
+                try:
+                    name = ds[idx]
+                except Exception:
+                    return
+                apply_preset_by_name(name)
+                # Synchronisiere UI explizit
+                try:
+                    dialog.Content = layout
+                    dialog.Invalidate()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        btn_load.Click += on_load
+        preset_panel.AddRow(lbl_presets, preset_combo, btn_load)
+        preset_panel.AddRow(save_name_tb, btn_save, btn_delete)
+        layout.AddRow(preset_panel)
+
+        layout.AddRow(None)
+        ok_btn = forms.Button(); ok_btn.Text = "OK"
+        cancel_btn = forms.Button(); cancel_btn.Text = "Abbrechen"
+        layout.AddSeparateRow(None, ok_btn, cancel_btn)
+
+        def on_ok(sender, e):
+            dialog.Tag = True
+            dialog.Close()
+        def on_cancel(sender, e):
+            dialog.Tag = False
+            dialog.Close()
+        ok_btn.Click += on_ok; cancel_btn.Click += on_cancel
+
+        dialog.Content = layout
+        dialog.Tag = False
+        # Zeige Dialog; versuche zuerst ohne Owner (robuster in manchen Rhino-Versionen)
+        try:
+            dialog.ShowModal()
+        except Exception as modal2_ex:
+            print("[Export] Dialog.ShowModal ohne Owner fehlgeschlagen:", modal2_ex)
+            try:
+                Rhino.UI.EtoExtensions.ShowSemiModal(dialog, sc.doc, Rhino.UI.RhinoEtoApp.MainWindow)
+            except Exception as semimodal_ex:
+                print("[Export] EtoExtensions.ShowSemiModal fehlgeschlagen:", semimodal_ex)
+                try:
+                    dialog.ShowModal(Rhino.UI.RhinoEtoApp.MainWindow)
+                except Exception as modal_ex:
+                    print("[Export] Dialog.ShowModal mit Owner fehlgeschlagen:", modal_ex)
+                    return None
+
+        if not dialog.Tag:
+            print("[Export] Dialog abgebrochen")
+            return None
+
+        # Determine selection and overrides
+        use_standard = True if bool(rb_desktop.Checked) else False
+        base_name = (name_tb.Text or "leader").strip() or "leader"
+        # Keys selection
+        export_all_keys = bool(cb_all_keys.Checked)
+        selected_keys = None
+        if not export_all_keys:
+            selected_keys = [k for k, cb in key_cbx.items() if bool(cb.Checked)]
+        if not has_types:
+            return [], use_standard, base_name, export_all_keys, selected_keys
+        selected_types = [n for n, c in cbx.items() if bool(c.Checked)]
+        if (cb_all is not None and bool(cb_all.Checked)) or not selected_types:
+            return [], use_standard, base_name, export_all_keys, selected_keys
+        styles = []
+        for t in selected_types:
+            dim = types_cfg.get(t, {}).get("dimstyle")
+            if dim:
+                styles.append(dim)
+        print("[Export] Auswahl:", styles if styles else "Alle Typen", ", Pfad Standard?", use_standard, ", Name:", base_name)
+        return styles, use_standard, base_name, export_all_keys, selected_keys
+    except Exception as e:
+        print("[Export] Fehler im Dialog:", e)
+        return None
+
 def normalize_value_for_excel(value, na_value):
     try:
         if value is None:
@@ -156,24 +540,146 @@ def normalize_value_for_excel(value, na_value):
     except Exception:
         return value
 
+def parse_floor_rank(text):
+    # Returns a tuple (rank, normalized) where lower rank sorts first
+    try:
+        if text is None:
+            return (10_000, "")
+        s = str(text).strip().upper()
+        if s == "":
+            return (10_000, "")
+        # Patterns:
+        # UGxxx (UG, UG-1, UG1, UG2, UG03...)
+        m = re.match(r"^UG\s*([-+]?\d+)?", s)
+        if m:
+            n = m.group(1)
+            num = int(n) if n is not None else 1
+            # more negative (deeper basement) should come first → lower floors first
+            return (-1000 + num, s)
+        # E-1, E0, E1, E2 ...
+        m = re.match(r"^E\s*([-+]?\d+)", s)
+        if m:
+            num = int(m.group(1))
+            return (num, s)
+        # EGxxx or EG
+        if s.startswith("EG"):
+            # treat EG as 0
+            return (0, s)
+        # 1OG, 2OG, 10OG ...
+        m = re.match(r"^([0-9]+)\s*OG", s)
+        if m:
+            num = int(m.group(1))
+            return (num, s)
+        # fallback: try to parse any int in string
+        m = re.search(r"-?\d+", s)
+        if m:
+            return (int(m.group(0)), s)
+        return (10_000, s)
+    except Exception:
+        return (10_000, str(text))
+
+def load_export_sorting_rules(cfg):
+    try:
+        base_dir = get_base_path(cfg)
+        path = os.path.join(base_dir, "export_sorting.json")
+        if os.path.isfile(path):
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+    return None
+
+def compute_floor_rank_with_rules(text, rules):
+    try:
+        s = ("" if text is None else str(text)).strip()
+        if s == "":
+            return None
+        patterns = rules.get("patterns") or []
+        for rule in patterns:
+            try:
+                rx = rule.get("regex")
+                if not rx:
+                    continue
+                m = re.search(rx, s, re.IGNORECASE)
+                if not m:
+                    continue
+                if "group" in rule:
+                    grp_index = int(rule.get("group", 1))
+                    base = int(rule.get("base", 0))
+                    num = int(m.group(grp_index))
+                    return base + num
+                if "rank" in rule:
+                    return int(rule.get("rank"))
+                # fallback: try first group numeric
+                if m.groups():
+                    try:
+                        return int(m.group(1))
+                    except Exception:
+                        pass
+                # if match but nothing defined, return 0 to keep matched top
+                return 0
+            except Exception:
+                continue
+        # fallback behavior
+        fb = rules.get("fallback") or {}
+        if fb.get("extract_int", True):
+            m = re.search(r"-?\d+", s)
+            if m:
+                return int(m.group(0))
+        return int(fb.get("fallback_rank", 10_000))
+    except Exception:
+        return None
+
+def compute_floor_rank(text, cfg, rules):
+    try:
+        if rules and (rules.get("enabled", True)):
+            return compute_floor_rank_with_rules(text, rules)
+    except Exception:
+        pass
+    # fallback heuristic
+    r = parse_floor_rank(text)
+    return r[0] if isinstance(r, tuple) else r
+
 def export_leader_texts(mode=None):
     cfg = load_config()
-    # Ziel-Bemaßungsstile
+    # Ziel-Bemaßungsstile (per Dialog auswählbar) + optionale Pfadangaben
     target_styles = cfg.get("export", {}).get("target_styles", [])
     # Erforderliche Keys aus allen CSV-Dateien (Union)
     required_keys = compute_required_keys_from_config(cfg)
+    picked = choose_export_options(cfg, required_keys)
+    use_standard_override = None
+    base_name_override = None
+    export_all_keys = True
+    selected_keys = None
+    if picked is not None:
+        if isinstance(picked, tuple) and len(picked) >= 3:
+            styles = picked[0]
+            use_standard_override = picked[1]
+            base_name_override = picked[2]
+            if len(picked) >= 5:
+                export_all_keys = bool(picked[3])
+                selected_keys = picked[4]
+            target_styles = styles  # [] => export all
+        elif isinstance(picked, list):
+            target_styles = picked
+    else:
+        print("[Export] Export-Dialog konnte nicht angezeigt werden – verwende ggf. Konsolenabfragen oder Defaults.")
 
-    def get_export_paths(active_mode, prompt_user=True):
+    def get_export_paths(active_mode, prompt_user=True, use_standard_override=None, base_name_override=None):
         desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
         use_standard = True
-        if prompt_user:
+        if use_standard_override is not None:
+            use_standard = bool(use_standard_override)
+        elif prompt_user:
             # True = Standard (Desktop), False = Dokument-Ordner
             res = rs.GetBoolean("Export to standard Desktop path?", ("StandardPath", "No", "Yes"), True)
             if res is not None and len(res) > 0:
                 use_standard = bool(res[0])
         if use_standard:
             base_dir = desktop_path
-            base_name = "leader"
+            base_name = base_name_override or "leader"
         else:
             # Dokumentpfad verwenden
             doc_path = sc.doc.Path or ""
@@ -183,7 +689,16 @@ def export_leader_texts(mode=None):
             else:
                 # Fallback auf Desktop, wenn Datei ungespeichert
                 base_dir = desktop_path
-            base_name = os.path.splitext(doc_name)[0] or "leader"
+            base_name = (base_name_override or os.path.splitext(doc_name)[0] or "leader")
+
+        if prompt_user and (base_name_override is None):
+            try:
+                default_name = base_name
+                entered = rs.GetString("Dateiname (ohne Endung)", default_name)
+                if entered and entered.strip():
+                    base_name = entered.strip()
+            except Exception:
+                pass
 
         output_path_txt = os.path.join(base_dir, f"{base_name}_leader_texts.txt")
         output_path_stats = os.path.join(base_dir, f"{base_name}_leader_stats.txt")
@@ -219,6 +734,9 @@ def export_leader_texts(mode=None):
                 keys = obj.Attributes.GetUserStrings()
                 if keys:
                     for key in keys.AllKeys:
+                        # optional Filter anhand Dialogauswahl
+                        if (not export_all_keys) and (selected_keys is not None) and (key not in selected_keys):
+                            continue
                         value = keys[key]
                         user_text_pairs.append(f"{key}={value}")
                         if key not in user_dict:
@@ -239,11 +757,22 @@ def export_leader_texts(mode=None):
                 if user_text_pairs:
                     full_line += " | " + " | ".join(user_text_pairs)
 
+                # add optional floor sort rank for known keys
+                floor_rank = None
+                try:
+                    if (cfg.get("export", {}).get("floor_sort", False)):
+                        rules = load_export_sorting_rules(cfg)
+                        # per user: source = leader text
+                        floor_rank = compute_floor_rank(text, cfg, rules)
+                except Exception:
+                    floor_rank = None
+
                 export_lines_text.append(full_line)
                 leaders.append({
                     "text": text,
                     "dimstyle": dimstyle.Name,
-                    "user": user_dict
+                    "user": user_dict,
+                    "_floor_rank": floor_rank
                 })
                 style_name = dimstyle.Name if dimstyle else "Unknown"
                 style_counts[style_name] += 1
@@ -257,7 +786,19 @@ def export_leader_texts(mode=None):
     if mode is None:
         mode = (cfg.get("logging", {}).get("mode") or "csv").lower()
     # Ausgabe-Dateipfade nach Nutzerwunsch bestimmen
-    output_path_txt, output_path_stats, output_path_xlsx = get_export_paths(mode, prompt_user=True)
+    output_path_txt, output_path_stats, output_path_xlsx = get_export_paths(
+        mode,
+        prompt_user=(picked is None),
+        use_standard_override=use_standard_override,
+        base_name_override=base_name_override,
+    )
+
+    # Optional floor sort for leaders list
+    try:
+        if cfg.get("export", {}).get("floor_sort", False):
+            leaders.sort(key=lambda it: (9999 if it.get("_floor_rank") is None else it.get("_floor_rank"), it.get("text", "")))
+    except Exception:
+        pass
 
     # TXT (wie bisher)
     if mode in ("txt", "csv"):
@@ -272,7 +813,7 @@ def export_leader_texts(mode=None):
             # zuerst die konfigurierten Stile in der gewünschten Reihenfolge
             for style in target_styles:
                 count = style_counts.get(style, 0)
-                stats_lines.append(f"{style}: {count}")
+            stats_lines.append(f"{style}: {count}")
             # anschließend alle übrigen Stile alphabetisch
             extra_styles = [s for s in style_counts.keys() if s not in target_styles]
             for style in sorted(extra_styles):
@@ -300,6 +841,16 @@ def export_leader_texts(mode=None):
             for k in all_user_keys:
                 if k not in final_keys:
                     final_keys.append(k)
+            # Falls der Nutzer Key-Filter gesetzt hat, anwenden
+            if not export_all_keys:
+                if selected_keys:
+                    # sicherstellen, dass ausgewählte Keys vorhanden sind (auch wenn nicht entdeckt)
+                    for k in selected_keys:
+                        if k not in final_keys:
+                            final_keys.append(k)
+                    final_keys = [k for k in final_keys if k in selected_keys]
+                else:
+                    final_keys = []
 
             header = ["text", "dimstyle"] + final_keys
 
