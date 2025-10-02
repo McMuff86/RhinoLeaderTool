@@ -885,6 +885,14 @@ def export_leader_texts(mode=None):
                         r[k] = "" if k not in user else ("" if user.get(k) is None else str(user.get(k)))
                     except Exception:
                         r[k] = ""
+                try:
+                    guid_val = user.get("LeaderGUID")
+                except Exception:
+                    guid_val = None
+                # persist guid under two keys: visible map key and internal helper
+                if guid_val is not None:
+                    r["LeaderGUID"] = str(guid_val)
+                r["_guid"] = None if guid_val is None else str(guid_val)
                 rows.append(r)
 
             # Content-Bereich mit Scrollbar, Buttons bleiben unten fix
@@ -990,6 +998,7 @@ def export_leader_texts(mode=None):
                             pass
                         col.DataCell = forms.TextBoxCell(idx)
                         grid.Columns.Add(col)
+                        return col
                     add_col(0, "text", 260)
                     add_col(1, "dimstyle", 180)
                     max_cols = 40
@@ -998,6 +1007,20 @@ def export_leader_texts(mode=None):
                             break
                         add_col(i + 2, k)
                         col_keys.append(k)
+                    # ensure LeaderGUID column exists (hidden) to enable 'Element anzeigen'
+                    if "LeaderGUID" not in col_keys:
+                        col_keys.append("LeaderGUID")
+                        try:
+                            _guid_col = add_col(len(col_keys) - 1, "LeaderGUID")
+                            try:
+                                _guid_col.Visible = False
+                            except Exception:
+                                try:
+                                    _guid_col.Width = 0
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
 
                     def build_store(data_rows):
                         try:
@@ -1147,14 +1170,72 @@ def export_leader_texts(mode=None):
 
             btn_export = forms.Button(); btn_export.Text = "Exportieren"
             btn_cancel = forms.Button(); btn_cancel.Text = "Abbrechen"
+            btn_show = forms.Button(); btn_show.Text = "Element anzeigen"
             def on_export(sender, e):
                 dialog.Tag = True
                 dialog.Close()
             def on_cancel(sender, e):
                 dialog.Tag = False
                 dialog.Close()
+            def on_show(sender, e):
+                try:
+                    sel = None
+                    try:
+                        sel = grid.SelectedItem
+                    except Exception:
+                        sel = None
+                    if sel is None:
+                        return
+                    vals = None
+                    try:
+                        vals = sel.Values
+                    except Exception:
+                        vals = None
+                    guid_text = None
+                    # read guid from hidden column when possible
+                    if vals is not None:
+                        try:
+                            gidx = col_keys.index("LeaderGUID")
+                            if gidx < len(vals):
+                                guid_text = vals[gidx]
+                        except Exception:
+                            guid_text = None
+                    # Fallback via current view rows matching text
+                    if not guid_text:
+                        try:
+                            tidx = col_keys.index("text")
+                            txt = vals[tidx] if (vals and tidx < len(vals)) else None
+                            if txt:
+                                for r in (row_view_ref.get("data") or []):
+                                    if r.get("text") == txt and r.get("_guid"):
+                                        guid_text = r.get("_guid"); break
+                        except Exception:
+                            pass
+                    if not guid_text:
+                        return
+                    try:
+                        import System
+                        guid_obj = System.Guid(guid_text)
+                    except Exception:
+                        guid_obj = None
+                    if guid_obj:
+                        try:
+                            rs.UnselectAllObjects()
+                        except Exception:
+                            pass
+                        try:
+                            rs.SelectObject(guid_obj)
+                            rs.ZoomSelected()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
             btn_export.Click += on_export; btn_cancel.Click += on_cancel
-            layout.AddSeparateRow(None, btn_export, btn_cancel)
+            try:
+                btn_show.Click += on_show
+            except Exception:
+                pass
+            layout.AddSeparateRow(None, btn_show, btn_export, btn_cancel)
 
             dialog.Content = layout
             dialog.Tag = False
