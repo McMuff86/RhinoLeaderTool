@@ -48,14 +48,36 @@ def default_candidate_paths():
     ]
 
 
-def choose_input_file():
-    # Try candidates first
-    for p in default_candidate_paths():
-        if os.path.isfile(p):
-            return p
-    # Ask user
+def choose_input_file(prompt_always=True, allow_csv=False):
+    # Build filter
+    if allow_csv:
+        filter_str = "Excel (*.xlsx)|*.xlsx||CSV (*.csv)|*.csv||All (*.*)|*.*||"
+    else:
+        filter_str = "Excel (*.xlsx)|*.xlsx||All (*.*)|*.*||"
+
+    # Compute sensible defaults for dialog
+    desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+    doc_path = sc.doc.Path or ""
+    base_dir = os.path.dirname(doc_path) if doc_path else desktop
+    doc_name = sc.doc.Name or "leader"
+    base_name = os.path.splitext(doc_name)[0] or "leader"
+
+    if not prompt_always:
+        # Try candidates first
+        for p in default_candidate_paths():
+            if os.path.isfile(p):
+                return p
+
+    # Ask user via dialog
     try:
-        return rs.OpenFileName("Select leader export file (XLSX or CSV)", "Excel (*.xlsx)|*.xlsx||CSV (*.csv)|*.csv||All (*.*)|*.*||")
+        # rs.OpenFileName(caption=None, filter=None, folder=None, filename=None, extension=None)
+        return rs.OpenFileName(
+            "Select leader export file (XLSX)",
+            filter_str,
+            base_dir,
+            f"{base_name}_leader_export.xlsx",
+            "xlsx",
+        )
     except Exception:
         return None
 
@@ -64,15 +86,21 @@ def read_xlsx(path):
     try:
         from openpyxl import load_workbook
         wb = load_workbook(path, read_only=True, data_only=True)
-        ws = wb.active
-        rows = list(ws.rows)
-        if not rows:
-            return [], []
-        header = [str(c.value) if c.value is not None else "" for c in rows[0]]
-        data = []
-        for r in rows[1:]:
-            data.append([c.value for c in r])
-        return header, data
+        try:
+            ws = wb.active
+            rows = list(ws.rows)
+            if not rows:
+                return [], []
+            header = [str(c.value) if c.value is not None else "" for c in rows[0]]
+            data = []
+            for r in rows[1:]:
+                data.append([c.value for c in r])
+            return header, data
+        finally:
+            try:
+                wb.close()
+            except Exception:
+                pass
     except Exception as e:
         # Fallback: parse .xlsx via zip (no external deps)
         try:
@@ -188,10 +216,81 @@ def to_string(v):
         return ""
 
 
+def normalize_value_like_old(old_value, new_value, key=None):
+    try:
+        import re
+        old_s = to_string(old_value)
+        new_s = to_string(new_value)
+        if old_s == "" or new_s == "":
+            return new_s
+
+        # Preserve leading zeros for integer-like fields
+        int_like_old = re.match(r'^[+-]?\d+$', old_s) is not None
+        dec_like_old = re.match(r'^[+-]?\d+\.\d+$', old_s) is not None
+
+        # Special-case known keys
+        lk = (key or "").strip().lower()
+        if lk in ("betriebsauftrag",):
+            # Always zero-pad to previous width if numbers
+            if re.match(r'^\d+$', new_s) or re.match(r'^[+-]?\d+(?:\.0+)?$', new_s):
+                try:
+                    width = len(re.sub(r'^[+-]?', '', old_s))
+                    sign = '-' if old_s.startswith('-') else ''
+                    n = int(float(new_s))
+                    return sign + str(abs(n)).zfill(width)
+                except Exception:
+                    return new_s
+        if lk in ("schemaversion",):
+            # Match decimal places from old value if numeric
+            if re.match(r'^[+-]?\d+(?:\.\d+)?$', new_s):
+                try:
+                    decimals = 0
+                    if dec_like_old:
+                        decimals = len(old_s.split('.')[-1])
+                    elif '.' in old_s:
+                        decimals = max(1, len(old_s.split('.')[-1]))
+                    else:
+                        decimals = 1  # ensure at least one decimal as typical schema style like 1.0
+                    val = float(new_s)
+                    fmt = "{:." + str(decimals) + "f}"
+                    return fmt.format(val)
+                except Exception:
+                    return new_s
+
+        # Generic rules if keys unknown
+        if int_like_old:
+            # If old had leading zeros, keep width
+            try:
+                width = len(old_s.lstrip('+').lstrip('-'))
+                # detect leading zeros in old
+                had_leading_zeros = old_s.lstrip('+').lstrip('-').startswith('0') and width > 1
+                if re.match(r'^[+-]?\d+(?:\.0+)?$', new_s):
+                    n = int(float(new_s))
+                    s = str(abs(n))
+                    if had_leading_zeros:
+                        s = s.zfill(width)
+                    sign = '-' if old_s.startswith('-') else ''
+                    return sign + s
+            except Exception:
+                return new_s
+        if dec_like_old and re.match(r'^[+-]?\d+(?:\.\d+)?$', new_s):
+            try:
+                decimals = len(old_s.split('.')[-1])
+                val = float(new_s)
+                fmt = "{:." + str(decimals) + "f}"
+                return fmt.format(val)
+            except Exception:
+                return new_s
+
+        return new_s
+    except Exception:
+        return to_string(new_value)
+
+
 def import_from_table(header, rows, skip_na=True, only_if_changed=True):
     if not header:
         print("No header found. Abort.")
-        return
+        return {"touched_leaders": 0, "updated_fields": 0, "changes": []}
     # Identify standard columns
     name_to_idx = {str(h).strip(): i for i, h in enumerate(header)}
     guid_col = None
@@ -211,6 +310,7 @@ def import_from_table(header, rows, skip_na=True, only_if_changed=True):
 
     updated_fields = 0
     touched_leaders = 0
+    changes = []
 
     for row in rows:
         if guid_col >= len(row):
@@ -241,12 +341,26 @@ def import_from_table(header, rows, skip_na=True, only_if_changed=True):
             if skip_na and new_val.upper() == get_na_value(load_config()).upper():
                 continue
             old_val = rs.GetUserText(leader_id, key) or ""
-            if only_if_changed and old_val == new_val:
+            # normalize new value to preserve formatting like old
+            try:
+                normalized_new_val = normalize_value_like_old(old_val, new_val, key)
+            except Exception:
+                normalized_new_val = new_val
+            if only_if_changed and old_val == normalized_new_val:
                 continue
             try:
-                rs.SetUserText(leader_id, key, new_val)
+                rs.SetUserText(leader_id, key, normalized_new_val)
                 updated_fields += 1
                 changed_any = True
+                try:
+                    changes.append({
+                        "LeaderGUID": str(leader_id),
+                        "Key": key,
+                        "OldValue": old_val,
+                        "NewValue": normalized_new_val,
+                    })
+                except Exception:
+                    pass
             except Exception:
                 pass
         if changed_any:
@@ -261,13 +375,53 @@ def import_from_table(header, rows, skip_na=True, only_if_changed=True):
             touched_leaders += 1
 
     print("Leaders updated:", touched_leaders, "| Fields changed:", updated_fields)
+    return {"touched_leaders": touched_leaders, "updated_fields": updated_fields, "changes": changes}
+
+
+def write_diff_csv(changes, source_path):
+    try:
+        if not changes:
+            return None
+        import os
+        import csv
+        from datetime import datetime
+        directory = os.path.dirname(source_path)
+        base_name = os.path.splitext(os.path.basename(source_path))[0]
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_path = os.path.join(directory, f"{base_name}_diff_{timestamp}.csv")
+        fieldnames = ["LeaderGUID", "Key", "OldValue", "NewValue"]
+        with open(out_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for rec in changes:
+                # ensure all keys exist
+                def excel_safe(val):
+                    s = "" if val is None else str(val)
+                    # Prevent formula injection
+                    if s.startswith('='):
+                        return "'" + s
+                    import re
+                    # If numeric-looking, force Excel to treat as text while displaying correctly
+                    if re.match(r'^[+-]?\d+(?:\.\d+)?$', s):
+                        return '="' + s.replace('"', '""') + '"'
+                    return s
+
+                row = {k: excel_safe(rec.get(k, "")) for k in fieldnames}
+                writer.writerow(row)
+        return out_path
+    except Exception as e:
+        try:
+            print("Failed to write diff CSV:", e)
+        except Exception:
+            pass
+        return None
 
 
 def run():
     cfg = load_config()
     na_value = get_na_value(cfg)
 
-    path = choose_input_file()
+    path = choose_input_file(prompt_always=True, allow_csv=False)
     if not path or not os.path.isfile(path):
         print("No file selected.")
         return
@@ -292,8 +446,17 @@ def run():
         print("Could not read table header from:", path)
         return
 
-    # Import
-    import_from_table(header, rows, skip_na=skip_na, only_if_changed=only_changed)
+    # Import and collect changes
+    result = import_from_table(header, rows, skip_na=skip_na, only_if_changed=only_changed)
+    try:
+        changes = (result or {}).get("changes", [])
+    except Exception:
+        changes = []
+    diff_path = write_diff_csv(changes, path)
+    if diff_path:
+        print("Diff written:", diff_path)
+    else:
+        print("No changes to write or failed to write diff file.")
 
 
 if __name__ == "__main__":

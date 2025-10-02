@@ -1,5 +1,24 @@
 #! python 3
 # -*- coding: utf-8 -*-
+'''
+# sync_leader_usertext.py – Synchronize Leader UserText from document defaults
+#
+# Functionality (short):
+# - Reads config.json to determine which keys are global (defaults.prompt_keys)
+#   and which are type-specific (defaults.type_specific_keys).
+# - Shows an Eto dialog where you pick a scope (Global or a Leader base type)
+#   and edit current values per key (pre-filled from DocData for the scope).
+# - On OK, it writes the edited values back into the Rhino DocData:
+#   * Global keys -> Section "RhinoLeaderToolGlobals"
+#   * Type-specific keys -> Section "RhinoLeaderToolType:<Type>" (if a type was selected)
+# - Then it synchronizes all Leaders in the document:
+#   Each selected key on a Leader is set to the type-specific DocData value
+#   if available, otherwise to the global DocData value.
+# - LeaderType is taken from the Leader's UserText ("LeaderType"),
+#   or inferred via the Leader's DimStyle matched against config.types[*].dimstyle.
+# - A console fallback is used if Eto is not available.
+'''
+
 import rhinoscriptsyntax as rs
 import Rhino
 import Rhino.UI
