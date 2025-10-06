@@ -1,5 +1,8 @@
 Bandseite,L
 Bandtyp,Elkuch 16-4
+Bandmass_1_c,227
+Bandmass_2_b,1620
+Bandmass_3_m,250
 Besonderes,0
 Betriebsauftrag,NA
 Betriebsauftragsposition,NA
@@ -10,12 +13,12 @@ Einlaufseite_von_aussen,NA
 Farbe_Bandseite,RAL9016
 Farbe_Futterseite,RAL9016
 Haus,NA
-Lichtbreite,NA
-Lichthöhe,NA
-Maueraufbau_Bandseite,10
-Maueraufbau_Futterseite,10
+Lichtbreite,900
+Lichthöhe,2100
+Maueraufbau_Bandseite,0
+Maueraufbau_Futterseite,0
 Mauerlichtbreite_Massaufnahme,NA
-Mauerlichtbreite_plan,880
+Mauerlichtbreite_plan,950
 Mauerlichthöhe_Massaufnahme,NA
 Mauerlichthöhe_Massaufnahme_ab_MtR,NA
 Mauerlichthöhe_plan,2140
@@ -37,17 +40,18 @@ Spion,NA
 Typ,UDS
 Türblatt_Falzbreite,0
 Türblatt_Falztiefe,0
-Türblatt_Farbe_Bandseite,RAL9016
-Türblatt_Farbe_Futterseite,RAL9016
-Türblattdicke,39
-Türblattkanten,KUKA
-Türblattkern,RS
-Türblatttyp,Optima30
+Türblatt_Farbe_Bandseite,Eiche Furniert
+Türblatt_Farbe_Futterseite,Eiche Furniert
+Türblattdicke,39+1+1
+Türblattkanten,Eiche
+Türblattkern,LS39
+Türblatttyp,Schuler Leichtspan 39 mit 5mm Hartdeckplatte
+Türblatt_Absenkdichtung,Ja
 Türschliesser,NA
 Umfassungstyp,Stahlzarge
 Zargen Bemerkung,NA
 Zargen E-Mass,1003
-Zargen-Profil,UDS
+Zargen-Profil,UDS.LBW
 Zargenfalzbreite,17
-Zargenfalztiefe,46
-Zargentiefe,180
+Zargenfalztiefe,48
+Zargentiefe,250

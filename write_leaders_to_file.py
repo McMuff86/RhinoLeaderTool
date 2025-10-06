@@ -172,20 +172,66 @@ def compute_required_keys_from_config(cfg):
         types_cfg = (cfg or {}).get("types", {})
         seen = set()
         for _typ, spec in types_cfg.items():
-            csv_name = spec.get("csv")
-            if not csv_name:
-                continue
-            if os.path.isabs(csv_name):
-                csv_path = csv_name
-            else:
-                csv_path = find_csv_in_tree(base_path, csv_name) or os.path.join(base_path, csv_name)
-            for key in read_csv_keys(csv_path):
-                if key not in seen:
-                    seen.add(key)
-                    required.append(key)
+            csv_names = []
+            try:
+                if spec.get("csv"):
+                    csv_names.append(spec.get("csv"))
+            except Exception:
+                pass
+            # include preset CSVs as well so preset-only keys appear in UI/export
+            try:
+                for pr in (spec.get("presets") or []):
+                    try:
+                        pr_csv = pr.get("csv")
+                        if pr_csv:
+                            csv_names.append(pr_csv)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            for csv_name in csv_names:
+                try:
+                    if os.path.isabs(csv_name):
+                        csv_path = csv_name
+                    else:
+                        csv_path = find_csv_in_tree(base_path, csv_name) or os.path.join(base_path, csv_name)
+                    for key in read_csv_keys(csv_path):
+                        if key not in seen:
+                            seen.add(key)
+                            required.append(key)
+                except Exception:
+                    pass
     except Exception:
         pass
     return required
+
+def compute_document_only_keys(required_keys):
+    extras = []
+    try:
+        req_set = set(required_keys or [])
+        seen = set()
+        for obj in sc.doc.Objects:
+            try:
+                geom = obj.Geometry
+            except Exception:
+                continue
+            if isinstance(geom, Rhino.Geometry.Leader):
+                try:
+                    keys = obj.Attributes.GetUserStrings()
+                except Exception:
+                    keys = None
+                if keys:
+                    for k in keys.AllKeys:
+                        if k in req_set:
+                            continue
+                        if k == "LeaderGUID":
+                            continue
+                        if k not in seen:
+                            seen.add(k)
+                            extras.append(k)
+    except Exception:
+        pass
+    return sorted(extras)
 
 def get_presets_store_path(cfg):
     try:
@@ -283,11 +329,27 @@ def choose_export_options(cfg, required_keys):
         layout.AddRow(None)
         rb_panel = forms.DynamicLayout(); rb_panel.Spacing = drawing.Size(6, 6)
         rb_desktop = forms.RadioButton(); rb_desktop.Text = "Desktop (Standardpfad)"
-        rb_doc = forms.RadioButton(); rb_doc.Text = "Ordner der 3dm-Datei"
-        rb_desktop.Checked = True
-        # Gruppieren: nur rb_doc an rb_desktop anhängen
+        # In Eto/IronPython RadioButtons must be grouped via constructor
         try:
-            rb_doc.Group = rb_desktop
+            rb_doc = forms.RadioButton(rb_desktop)
+        except Exception:
+            rb_doc = forms.RadioButton()
+            try:
+                rb_doc.Group = rb_desktop
+            except Exception:
+                pass
+        rb_doc.Text = "Ordner der 3dm-Datei"
+        rb_desktop.Checked = True
+        # Defensive fallback to keep exclusivity even if grouping isn't supported
+        def _sync_group(_src, _dst):
+            try:
+                if bool(_src.Checked):
+                    _dst.Checked = False
+            except Exception:
+                pass
+        try:
+            rb_desktop.CheckedChanged += lambda s, e: _sync_group(rb_desktop, rb_doc)
+            rb_doc.CheckedChanged += lambda s, e: _sync_group(rb_doc, rb_desktop)
         except Exception:
             pass
         rb_panel.AddRow(rb_desktop)
@@ -309,23 +371,38 @@ def choose_export_options(cfg, required_keys):
         keys_panel.AddRow(cb_all_keys)
         key_cbx = {}
         sorted_keys = sorted(required_keys)
+        # document-only keys
+        doc_only = compute_document_only_keys(required_keys)
         # Spalten aufteilen
-        mid = (len(sorted_keys) + 1) // 2
-        left_keys = sorted_keys[:mid]
-        right_keys = sorted_keys[mid:]
-        col_left = forms.DynamicLayout(); col_left.Spacing = drawing.Size(4, 4)
-        col_right = forms.DynamicLayout(); col_right.Spacing = drawing.Size(4, 4)
-        for k in left_keys:
-            cbk = forms.CheckBox(); cbk.Text = k; cbk.Checked = True
-            key_cbx[k] = cbk
-            col_left.AddRow(cbk)
-        for k in right_keys:
-            cbk = forms.CheckBox(); cbk.Text = k; cbk.Checked = True
-            key_cbx[k] = cbk
-            col_right.AddRow(cbk)
-        cols_container = forms.DynamicLayout(); cols_container.Spacing = drawing.Size(12, 6)
-        cols_container.AddRow(col_left, col_right)
-        scroll = forms.Scrollable(); scroll.Content = cols_container
+        def build_two_columns(keys, default_checked=True):
+            mid = (len(keys) + 1) // 2
+            left = keys[:mid]
+            right = keys[mid:]
+            col_left = forms.DynamicLayout(); col_left.Spacing = drawing.Size(4, 4)
+            col_right = forms.DynamicLayout(); col_right.Spacing = drawing.Size(4, 4)
+            for k in left:
+                cbk = forms.CheckBox(); cbk.Text = k; cbk.Checked = default_checked
+                key_cbx[k] = cbk
+                col_left.AddRow(cbk)
+            for k in right:
+                cbk = forms.CheckBox(); cbk.Text = k; cbk.Checked = default_checked
+                key_cbx[k] = cbk
+                col_right.AddRow(cbk)
+            cols = forms.DynamicLayout(); cols.Spacing = drawing.Size(12, 6)
+            cols.AddRow(col_left, col_right)
+            return cols
+
+        cols_csv = build_two_columns(sorted_keys, True)
+        cols_doc = build_two_columns(doc_only, False) if doc_only else None
+
+        tabs_keys = forms.TabControl()
+        page_csv = forms.TabPage(); page_csv.Text = "CSV-Keys"; page_csv.Content = cols_csv
+        tabs_keys.Pages.Add(page_csv)
+        if cols_doc is not None:
+            page_doc = forms.TabPage(); page_doc.Text = "Dokument-Keys"; page_doc.Content = cols_doc
+            tabs_keys.Pages.Add(page_doc)
+
+        scroll = forms.Scrollable(); scroll.Content = tabs_keys
         try:
             scroll.ExpandContentWidth = True
             scroll.ExpandContentHeight = False
@@ -696,6 +773,208 @@ def compute_floor_rank(text, cfg, rules):
     # fallback heuristic
     r = parse_floor_rank(text)
     return r[0] if isinstance(r, tuple) else r
+
+def _normalize_key(name):
+    try:
+        if name is None:
+            return ""
+        s = str(name).strip().lower()
+        # replace german umlauts for tolerant matches
+        s = s.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue")
+        s = s.replace("ß", "ss")
+        s = s.replace(" ", "_")
+        return s
+    except Exception:
+        return ""
+
+def _normalize_int_from_string(text):
+    try:
+        if text is None:
+            return None
+        s = str(text).strip()
+        if s == "":
+            return None
+        import re
+        m = re.search(r"-?\d+", s.replace(",", "."))
+        if not m:
+            return None
+        return int(m.group(0))
+    except Exception:
+        return None
+
+def _get_user_value(user_dict, candidate_keys):
+    try:
+        if not isinstance(user_dict, dict):
+            return None, None
+        norm_map = { _normalize_key(k): k for k in user_dict.keys() }
+        for c in candidate_keys:
+            n = _normalize_key(c)
+            if n in norm_map:
+                real_key = norm_map[n]
+                return real_key, user_dict.get(real_key)
+    except Exception:
+        pass
+    return None, None
+
+def load_elkuch_mapping(cfg):
+    try:
+        base_dir = get_base_path(cfg)
+        csv_path = os.path.join(base_dir, "Anordnung_Band_Schloss_Elkuch.CSV")
+        if not os.path.isfile(csv_path):
+            return None
+        mapping = {}
+        with open(csv_path, "r", encoding="utf-8") as f:
+            lines = [ln.strip() for ln in f if ln.strip()]
+        if not lines:
+            return None
+        header = [h.strip() for h in lines[0].split(";")]
+        # indices
+        def idx_of(names):
+            norm = [_normalize_key(x) for x in header]
+            for want in names:
+                w = _normalize_key(want)
+                if w in norm:
+                    return norm.index(w)
+            return -1
+        idx_h = idx_of(["lichte_höhe", "lichte_hoehe", "lichthöhe", "lichthohe"]) 
+        idx_b = idx_of(["b"])
+        idx_c = idx_of(["c"])
+        idx_d = idx_of(["d"])
+        if min(idx_h, idx_b, idx_c, idx_d) < 0:
+            return None
+        for ln in lines[1:]:
+            parts = [p.strip() for p in ln.split(";")]
+            if idx_h >= len(parts):
+                continue
+            hval = _normalize_int_from_string(parts[idx_h])
+            if hval is None:
+                continue
+            def safe_get(i):
+                try:
+                    return parts[i]
+                except Exception:
+                    return ""
+            mapping[hval] = {"B": safe_get(idx_b), "C": safe_get(idx_c), "D": safe_get(idx_d)}
+        return mapping
+    except Exception:
+        return None
+
+def autofill_band_masses_for_export(leaders, cfg):
+    try:
+        mapping = load_elkuch_mapping(cfg)
+        if not mapping:
+            return
+        for it in leaders:
+            try:
+                user = it.get("user") or {}
+                # Read band count and height
+                _key_ba, band_count_val = _get_user_value(user, ["Bandanzahl", "Band_anzahl", "bandanzahl"])
+                _key_h, height_val = _get_user_value(user, ["Lichthöhe", "lichte_höhe", "lichthohe", "lichte_hoehe"])
+                # Bandanzahl kann auch "calc" sein → dann aus Mapping nur Bandmassen berechnen,
+                # Bandanzahl selbst bleibt wie gesetzt (calc oder vorhandener Wert)
+                if height_val is None:
+                    continue
+                band_count = _normalize_int_from_string(band_count_val)
+                hnorm = _normalize_int_from_string(height_val)
+                if hnorm is None:
+                    continue
+                row = mapping.get(hnorm)
+                if not row:
+                    continue
+                # Only overwrite targets that explicitly ask for calc
+                # c, b, d keys
+                key_c_candidates = ["Bandmass_1_c", "bandmass_1_c"]
+                key_b_candidates = ["Bandmass_2_b", "bandmass_2_b"]
+                key_d_candidates = ["Bandmass_3_d", "bandmass_3_d"]
+                k_c, v_c = _get_user_value(user, key_c_candidates)
+                k_b, v_b = _get_user_value(user, key_b_candidates)
+                k_d, v_d = _get_user_value(user, key_d_candidates)
+                def is_calc(x):
+                    try:
+                        return str(x).strip().lower() == "calc"
+                    except Exception:
+                        return False
+                if band_count == 2:
+                    if k_c and is_calc(v_c):
+                        user[k_c] = row.get("C", "")
+                    if k_b and is_calc(v_b):
+                        user[k_b] = row.get("B", "")
+                    if k_d and is_calc(v_d):
+                        user[k_d] = "None"
+                elif band_count == 3:
+                    if k_c and is_calc(v_c):
+                        user[k_c] = row.get("C", "")
+                    if k_b and is_calc(v_b):
+                        user[k_b] = row.get("B", "")
+                    if k_d and is_calc(v_d):
+                        user[k_d] = row.get("D", "")
+                else:
+                    # Wenn Bandanzahl nicht parsebar (z. B. calc), fülle konservativ C/B und setze D=None
+                    if k_c and is_calc(v_c):
+                        user[k_c] = row.get("C", "")
+                    if k_b and is_calc(v_b):
+                        user[k_b] = row.get("B", "")
+                    if k_d and is_calc(v_d):
+                        user[k_d] = "None"
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+def _get_csv_keys_for_styles(cfg, styles):
+    try:
+        if not styles:
+            return []
+        types_cfg = (cfg or {}).get("types", {})
+        base_path = get_selected_csv_folder(cfg, prompt_if_missing=False) or get_base_path(cfg)
+        order = []
+        seen = set()
+        for name, spec in types_cfg.items():
+            try:
+                dim = spec.get("dimstyle")
+                if dim not in styles:
+                    continue
+                csv_name = spec.get("csv")
+                if not csv_name:
+                    continue
+                if os.path.isabs(csv_name):
+                    csv_path = csv_name
+                else:
+                    csv_path = find_csv_in_tree(base_path, csv_name) or os.path.join(base_path, csv_name)
+                for k in read_csv_keys(csv_path):
+                    if k not in seen:
+                        seen.add(k)
+                        order.append(k)
+            except Exception:
+                pass
+        return order
+    except Exception:
+        return []
+
+def _reorder_final_keys(cfg, final_keys, target_styles):
+    try:
+        if not final_keys:
+            return final_keys
+        leader_guid_last = "LeaderGUID" in final_keys
+        remaining = [k for k in final_keys if k != "LeaderGUID"]
+        preferred = _get_csv_keys_for_styles(cfg, target_styles)
+        ordered = []
+        if preferred:
+            for k in preferred:
+                if k in remaining and k not in ordered:
+                    ordered.append(k)
+            # append any leftover alphabetically
+            leftovers = [k for k in remaining if k not in ordered]
+            leftovers.sort(key=lambda s: s.lower())
+            ordered.extend(leftovers)
+        else:
+            # No specific styles selected → alphabetical
+            ordered = sorted(remaining, key=lambda s: s.lower())
+        if leader_guid_last:
+            ordered.append("LeaderGUID")
+        return ordered
+    except Exception:
+        return final_keys
 
 def export_leader_texts(mode=None):
     cfg = load_config()
@@ -1174,6 +1453,22 @@ def export_leader_texts(mode=None):
                                 if vals is None or guid_idx >= len(vals):
                                     continue
                                 guid_text = vals[guid_idx]
+                                # Fallback: GUID über Text ermitteln, wenn Spalte leer ist
+                                if not guid_text:
+                                    try:
+                                        t_idx = col_keys.index("text")
+                                    except Exception:
+                                        t_idx = -1
+                                    if t_idx >= 0 and t_idx < len(vals):
+                                        row_txt = vals[t_idx]
+                                        if row_txt:
+                                            try:
+                                                for r in (row_view_ref.get("data") or []):
+                                                    if r.get("text") == row_txt and r.get("_guid"):
+                                                        guid_text = r.get("_guid")
+                                                        break
+                                            except Exception:
+                                                pass
                                 base_row = guid_to_row.get(guid_text)
                                 if not base_row:
                                     continue
@@ -1348,6 +1643,11 @@ def export_leader_texts(mode=None):
                                     vals[col_index] = new_val
                                 else:
                                     return
+                            except Exception:
+                                pass
+                            # Sicherstellen, dass Werte im Item aktualisiert werden
+                            try:
+                                e.Item.Values = vals
                             except Exception:
                                 pass
                             # GUID holen
@@ -1537,6 +1837,52 @@ def export_leader_texts(mode=None):
             def on_commit(sender, e):
                 try:
                     total = 0
+                    # Ensure we target the active Rhino document
+                    try:
+                        active_doc = Rhino.RhinoDoc.ActiveDoc
+                        if active_doc is not None:
+                            sc.doc = active_doc
+                    except Exception:
+                        pass
+                    # Helper: write UserText using RhinoCommon (more reliable than rs in some contexts)
+                    def _write_usertext(obj_guid, key, val):
+                        try:
+                            ro = None
+                            try:
+                                ro = sc.doc.Objects.FindId(obj_guid)
+                            except Exception:
+                                ro = None
+                            if ro is None:
+                                return False
+                            # Do not modify locked objects
+                            try:
+                                if ro.IsLocked:
+                                    return False
+                            except Exception:
+                                pass
+                            try:
+                                attrs = ro.Attributes.Duplicate()
+                            except Exception:
+                                attrs = None
+                            if attrs is None:
+                                return False
+                            try:
+                                attrs.SetUserString(key, "" if val is None else str(val))
+                            except Exception:
+                                return False
+                            try:
+                                ok = sc.doc.Objects.ModifyAttributes(ro, attrs, True)
+                            except Exception:
+                                ok = False
+                            return bool(ok)
+                        except Exception:
+                            return False
+                    # Batch under one undo record
+                    undo_rec = None
+                    try:
+                        undo_rec = sc.doc.BeginUndoRecord("Leader Preview Commit")
+                    except Exception:
+                        undo_rec = None
                     # 1) Änderungen aus DataStore direkt ermitteln (robust, unabhängig von Edit-Events)
                     try:
                         gidx = col_keys.index("LeaderGUID")
@@ -1557,6 +1903,22 @@ def export_leader_texts(mode=None):
                                 if vals is None or gidx >= len(vals):
                                     continue
                                 gtxt = vals[gidx]
+                                # Fallback: GUID aus Textspalte ermitteln
+                                if not gtxt:
+                                    try:
+                                        t_idx = col_keys.index("text")
+                                    except Exception:
+                                        t_idx = -1
+                                    if t_idx >= 0 and t_idx < len(vals):
+                                        row_txt = vals[t_idx]
+                                        if row_txt:
+                                            try:
+                                                for r in (row_view_ref.get("data") or []):
+                                                    if r.get("text") == row_txt and r.get("_guid"):
+                                                        gtxt = r.get("_guid")
+                                                        break
+                                            except Exception:
+                                                pass
                                 if not gtxt:
                                     continue
                                 try:
@@ -1579,8 +1941,8 @@ def export_leader_texts(mode=None):
                                         old_val = None
                                     if str(new_val) != str(old_val):
                                         try:
-                                            rs.SetUserText(obj_id, key, "" if new_val is None else str(new_val))
-                                            total += 1
+                                            if _write_usertext(obj_id, key, new_val):
+                                                total += 1
                                         except Exception:
                                             pass
                                         try:
@@ -1607,10 +1969,20 @@ def export_leader_texts(mode=None):
                             continue
                         for k, v in kv.items():
                             try:
-                                rs.SetUserText(obj_id, k, v)
-                                total += 1
+                                if _write_usertext(obj_id, k, v):
+                                    total += 1
                             except Exception:
                                 pass
+                    # Close undo record and refresh views
+                    try:
+                        if undo_rec is not None:
+                            sc.doc.EndUndoRecord(undo_rec)
+                    except Exception:
+                        pass
+                    try:
+                        sc.doc.Views.Redraw()
+                    except Exception:
+                        pass
                     # Clear nach Commit
                     pending_changes.clear()
                     try:
@@ -1648,6 +2020,16 @@ def export_leader_texts(mode=None):
             return True
 
     if preview_before_export:
+        # apply auto-fill rules before showing preview, so users see final export values
+        try:
+            autofill_band_masses_for_export(leaders, cfg)
+        except Exception:
+            pass
+        # reorder columns for preview according to CSV or alphabetical
+        try:
+            final_keys = _reorder_final_keys(cfg, final_keys, target_styles)
+        except Exception:
+            pass
         proceed = show_preview_dialog(cfg, leaders, final_keys)
         if not proceed:
             print("[Export] Abgebrochen nach Vorschau.")
@@ -1668,6 +2050,12 @@ def export_leader_texts(mode=None):
     try:
         if cfg.get("export", {}).get("floor_sort", False):
             leaders.sort(key=lambda it: (9999 if it.get("_floor_rank") is None else it.get("_floor_rank"), it.get("text", "")))
+    except Exception:
+        pass
+
+    # Sicherstellen, dass Auto-Fill auch ohne Vorschau greift
+    try:
+        autofill_band_masses_for_export(leaders, cfg)
     except Exception:
         pass
 
@@ -1707,6 +2095,11 @@ def export_leader_texts(mode=None):
 
             na_value = cfg.get("export", {}).get("na_value", "NA")
 
+            # reorder final_keys again for the actual export
+            try:
+                final_keys = _reorder_final_keys(cfg, final_keys, target_styles)
+            except Exception:
+                pass
             header = ["text", "dimstyle"] + final_keys
 
             workbook = xlsxwriter.Workbook(output_path_xlsx)

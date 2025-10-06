@@ -32,4 +32,7 @@
 - Screenshots/GIFs des Workflows in README/USAGE.
 - Schritt-für-Schritt Guide für das Anlegen neuer DimStyles im Büro-Template.
 
+### Berechnung der Bandhöhen ([Bandmass_1_c,227],[Bandmass_2_b,1620],[Bandmass_3_d,250])
+- Einfügewertre via csv in Bezug auf "Lichthöhe" -> Lichthöhe,2100 : Anordnung_Band_Schloss_Elkuch.csv
+
 
