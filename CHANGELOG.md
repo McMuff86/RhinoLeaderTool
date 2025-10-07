@@ -3,7 +3,9 @@
 All notable changes to this project will be documented in this file.
 
 ### [Unreleased]
-- Add AGENTS.md overview, shared export presets, and requirements.txt
+- Modularization groundwork: added `rhino_sync.py`, `calc_engine.py`
+- Export preview per-cell commit via RhinoCommon with UI-thread invocation
+- Docs moved under `docs/` (README, USEAGE, FUTURE_IMPROVEMENTS, AGENTS)
 
 ### 2025-10-02
 - Export dialog: add type filter, path+filename selection

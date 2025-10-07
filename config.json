@@ -1,6 +1,8 @@
 {
   "export": {
-    "na_value": "NA"
+    "na_value": "NA",
+    "debug_calc": true,
+    "override_bandmasse": false
   },
   "template_path": "LeaderAnnotationTemplate.3dm",
   "logging": {

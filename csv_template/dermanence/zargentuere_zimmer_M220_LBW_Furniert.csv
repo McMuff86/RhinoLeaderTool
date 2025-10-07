@@ -1,8 +1,9 @@
 Bandseite,L
 Bandtyp,Elkuch 16-4
-Bandmass_1_c,227
-Bandmass_2_b,1620
-Bandmass_3_m,250
+Bandanzahl,3
+Bandmass_1_c,calc
+Bandmass_2_b,calc
+Bandmass_3_d,calc
 Besonderes,0
 Betriebsauftrag,NA
 Betriebsauftragsposition,NA

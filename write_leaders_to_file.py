@@ -6,93 +6,15 @@ import Rhino
 import Rhino.UI
 import os
 import json
+from export_writer import write_txt_and_stats, write_xlsx
 import re
 from collections import defaultdict
+from export_ui import show_preview_dialog as ui_show_preview
 
 
-def load_config():
-    """Load configuration with robust repo-relative discovery.
+from config_io import load_config, get_base_path
 
-    Search order for config.json:
-      1) RHINOLEADERTOOL_CONFIG env var (absolute file path)
-      2) Next to this script (__file__)
-      3) Current working directory
-      4) Legacy default under ~/source/repos/work/library/RhinoLeaderTool/config.json
-
-    Also ensure a sensible base_path exists (defaults to the script directory
-    when not explicitly provided), so other functions can locate CSVs and
-    preset files within the cloned repository.
-    """
-    user_dir = os.path.expanduser("~")
-    legacy_base = os.path.join(user_dir, "source", "repos", "work", "library", "RhinoLeaderTool")
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-
-    candidates = []
-    try:
-        env_path = os.environ.get("RHINOLEADERTOOL_CONFIG")
-        if env_path:
-            candidates.append(env_path)
-    except Exception:
-        pass
-    candidates.append(os.path.join(script_dir, "config.json"))
-    candidates.append(os.path.join(os.getcwd(), "config.json"))
-    candidates.append(os.path.join(legacy_base, "config.json"))
-
-    cfg_path = None
-    for path in candidates:
-        try:
-            if path and os.path.isfile(path):
-                cfg_path = path
-                break
-        except Exception:
-            continue
-
-    default = {
-        "logging": {"mode": "xlsx"},
-        "export": {
-            "target_styles": [
-                "Standard 1:10 Rahmenbeschriftung",
-                "Standard 1:10 Rahmenbeschriftung WHG Eingang",
-                "Standard 1:10 Zargenbeschriftung",
-                "Standard 1:10 Schiebetürbeschriftung",
-                "Standard 1:10 Spez.Rahmenbeschriftung"
-            ],
-            "na_value": "NA",
-            "floor_sort": True
-        }
-    }
-
-    try:
-        if cfg_path:
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                file_cfg = json.load(f)
-            for k, v in file_cfg.items():
-                default[k] = v
-    except Exception:
-        pass
-
-    # Guarantee a valid base_path pointing to the repository when possible
-    try:
-        if not default.get("base_path"):
-            default["base_path"] = script_dir
-    except Exception:
-        pass
-    return default
-
-def get_base_path(cfg):
-    user_dir = os.path.expanduser("~")
-    default_base = os.path.join(user_dir, "source", "repos", "work", "library", "RhinoLeaderTool")
-    cfg_base = cfg.get("base_path") if isinstance(cfg, dict) else None
-    if cfg_base and os.path.isdir(cfg_base):
-        return cfg_base
-    # Prefer repository directory (where this script lives) if present
-    try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        if os.path.isdir(script_dir):
-            return script_dir
-    except Exception:
-        pass
-    return default_base
+## get_base_path now imported from config_io
 
 def get_selected_csv_folder(cfg, prompt_if_missing=False):
     try:
@@ -774,15 +696,77 @@ def compute_floor_rank(text, cfg, rules):
     r = parse_floor_rank(text)
     return r[0] if isinstance(r, tuple) else r
 
+def _write_usertext_ui(obj_id, key, val):
+    try:
+        import Rhino
+        import System
+        ok_ref = {"ok": False}
+        def _do():
+            try:
+                ro = sc.doc.Objects.FindId(obj_id)
+            except Exception:
+                ro = None
+            if ro is None:
+                ok_ref["ok"] = False; return
+            try:
+                if getattr(ro, 'IsLocked', False):
+                    ok_ref["ok"] = False; return
+            except Exception:
+                pass
+            attrs = None
+            try:
+                attrs = ro.Attributes.Duplicate()
+            except Exception:
+                attrs = None
+            if attrs is None:
+                ok_ref["ok"] = False; return
+            try:
+                attrs.SetUserString(key, "" if val is None else str(val))
+            except Exception:
+                ok_ref["ok"] = False; return
+            rec = None
+            try:
+                rec = sc.doc.BeginUndoRecord("UserText Edit")
+            except Exception:
+                rec = None
+            try:
+                ok2 = sc.doc.Objects.ModifyAttributes(ro, attrs, True)
+            except Exception:
+                ok2 = False
+            try:
+                if rec is not None:
+                    sc.doc.EndUndoRecord(rec)
+            except Exception:
+                pass
+            try:
+                sc.doc.Views.Redraw()
+            except Exception:
+                pass
+            ok_ref["ok"] = bool(ok2)
+        try:
+            Rhino.RhinoApp.InvokeOnUiThread(System.Action(_do))
+        except Exception:
+            _do()
+        return ok_ref.get("ok", False)
+    except Exception:
+        return False
+
 def _normalize_key(name):
     try:
         if name is None:
             return ""
         s = str(name).strip().lower()
+        # remove BOM and hidden whitespace
+        try:
+            s = s.replace(u"\ufeff", "")
+        except Exception:
+            pass
         # replace german umlauts for tolerant matches
         s = s.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue")
         s = s.replace("ß", "ss")
         s = s.replace(" ", "_")
+        # collapse underscores so variants with/without '_' match equally
+        s = s.replace("_", "")
         return s
     except Exception:
         return ""
@@ -816,11 +800,72 @@ def _get_user_value(user_dict, candidate_keys):
         pass
     return None, None
 
+def _is_debug_calc_enabled(cfg):
+    try:
+        return bool((cfg.get("export") or {}).get("debug_calc", False))
+    except Exception:
+        return False
+
+def _is_override_bandmass_enabled(cfg):
+    try:
+        exp = (cfg.get("export") or {})
+        # support both spellings
+        if "override_bandmasse" in exp:
+            return bool(exp.get("override_bandmasse"))
+        if "override_bandmass" in exp:
+            return bool(exp.get("override_bandmass"))
+        return False
+    except Exception:
+        return False
+
 def load_elkuch_mapping(cfg):
     try:
         base_dir = get_base_path(cfg)
-        csv_path = os.path.join(base_dir, "Anordnung_Band_Schloss_Elkuch.CSV")
-        if not os.path.isfile(csv_path):
+        filename = "Anordnung_Band_Schloss_Elkuch.CSV"
+        candidates = []
+        try:
+            candidates.append(os.path.join(base_dir, filename))
+        except Exception:
+            pass
+        # also probe selected CSV folder and tree search as fallback
+        try:
+            sel_dir = get_selected_csv_folder(cfg, prompt_if_missing=False)
+        except Exception:
+            sel_dir = None
+        if sel_dir:
+            try:
+                candidates.append(os.path.join(sel_dir, filename))
+            except Exception:
+                pass
+        # tree search
+        try:
+            found = find_csv_in_tree(base_dir, filename)
+            if found and found not in candidates:
+                candidates.append(found)
+        except Exception:
+            pass
+        if sel_dir:
+            try:
+                found2 = find_csv_in_tree(sel_dir, filename)
+                if found2 and found2 not in candidates:
+                    candidates.append(found2)
+            except Exception:
+                pass
+        csv_path = None
+        for c in candidates:
+            try:
+                if c and os.path.isfile(c):
+                    csv_path = c; break
+            except Exception:
+                continue
+        if not csv_path:
+            if _is_debug_calc_enabled(cfg):
+                try:
+                    print("[Calc] Elkuch mapping file not found. Tried:")
+                    for c in candidates:
+                        print("   -", c)
+                except Exception:
+                    pass
             return None
         mapping = {}
         with open(csv_path, "r", encoding="utf-8") as f:
@@ -840,7 +885,13 @@ def load_elkuch_mapping(cfg):
         idx_b = idx_of(["b"])
         idx_c = idx_of(["c"])
         idx_d = idx_of(["d"])
+        idx_m = idx_of(["m"])  # optional middle column
         if min(idx_h, idx_b, idx_c, idx_d) < 0:
+            if _is_debug_calc_enabled(cfg):
+                try:
+                    print("[Calc] Elkuch header not recognized:", header)
+                except Exception:
+                    pass
             return None
         for ln in lines[1:]:
             parts = [p.strip() for p in ln.split(";")]
@@ -854,7 +905,10 @@ def load_elkuch_mapping(cfg):
                     return parts[i]
                 except Exception:
                     return ""
-            mapping[hval] = {"B": safe_get(idx_b), "C": safe_get(idx_c), "D": safe_get(idx_d)}
+            row = {"B": safe_get(idx_b), "C": safe_get(idx_c), "D": safe_get(idx_d)}
+            if idx_m >= 0 and idx_m < len(parts):
+                row["M"] = safe_get(idx_m)
+            mapping[hval] = row
         return mapping
     except Exception:
         return None
@@ -863,59 +917,156 @@ def autofill_band_masses_for_export(leaders, cfg):
     try:
         mapping = load_elkuch_mapping(cfg)
         if not mapping:
+            if _is_debug_calc_enabled(cfg):
+                print("[Calc] Elkuch mapping not found – skip.")
             return
         for it in leaders:
             try:
                 user = it.get("user") or {}
+                leader_name = it.get("text", "")
                 # Read band count and height
                 _key_ba, band_count_val = _get_user_value(user, ["Bandanzahl", "Band_anzahl", "bandanzahl"])
                 _key_h, height_val = _get_user_value(user, ["Lichthöhe", "lichte_höhe", "lichthohe", "lichte_hoehe"])
-                # Bandanzahl kann auch "calc" sein → dann aus Mapping nur Bandmassen berechnen,
+                # Bandanzahl kann auch "calc" sein → dann aus Mapping nur Bandmasse berechnen,
                 # Bandanzahl selbst bleibt wie gesetzt (calc oder vorhandener Wert)
                 if height_val is None:
+                    if _is_debug_calc_enabled(cfg):
+                        print("[Calc] {}: skip – Lichthöhe missing".format(leader_name))
                     continue
                 band_count = _normalize_int_from_string(band_count_val)
                 hnorm = _normalize_int_from_string(height_val)
                 if hnorm is None:
+                    if _is_debug_calc_enabled(cfg):
+                        print("[Calc] {}: skip – Lichthöhe unparsable: {}".format(leader_name, height_val))
                     continue
                 row = mapping.get(hnorm)
                 if not row:
+                    if _is_debug_calc_enabled(cfg):
+                        print("[Calc] {}: skip – no Elkuch row for height {}".format(leader_name, hnorm))
                     continue
-                # Only overwrite targets that explicitly ask for calc
-                # c, b, d keys
-                key_c_candidates = ["Bandmass_1_c", "bandmass_1_c"]
-                key_b_candidates = ["Bandmass_2_b", "bandmass_2_b"]
-                key_d_candidates = ["Bandmass_3_d", "bandmass_3_d"]
-                k_c, v_c = _get_user_value(user, key_c_candidates)
-                k_b, v_b = _get_user_value(user, key_b_candidates)
-                k_d, v_d = _get_user_value(user, key_d_candidates)
+                # Detect any present bandmass keys, tolerant to naming (Bandmass_1_c, Bandmass1_c, Bandmass1c, Bandmass3_m, ...)
                 def is_calc(x):
                     try:
                         return str(x).strip().lower() == "calc"
                     except Exception:
                         return False
+                norm_to_real = { _normalize_key(k): k for k in (user.keys() if isinstance(user, dict) else []) }
+                present = []
+                for nk, real in norm_to_real.items():
+                    # expect pattern bandmass{index}{letter}
+                    if not nk.startswith("bandmass"):
+                        continue
+                    rest = nk[len("bandmass"):]
+                    # rest like '1c' or '1_c' collapsed already
+                    if len(rest) < 2:
+                        continue
+                    idx_char = rest[0]
+                    if idx_char not in ("1", "2", "3"):
+                        continue
+                    letter = rest[1:2]
+                    present.append((idx_char, letter.lower(), real, user.get(real)))
+                # If override is enabled and no bandmass keys exist, we still want to provide values in export
+                override_all = _is_override_bandmass_enabled(cfg)
+                if not present and not override_all:
+                    if _is_debug_calc_enabled(cfg):
+                        print("[Calc] {}: skip – no Bandmass* calc targets present".format(leader_name))
+                    continue
+
+                def fill_for(idx, letter_target, value):
+                    # idx: '1','2','3'; letter_target one of 'c','b','d','m'
+                    # Strategy: if a matching key for this index exists, set that; otherwise set canonical key
+                    target_assigned = False
+                    changed_local = 0
+                    for i, lt, real_key, cur in present:
+                        if i != idx:
+                            continue
+                        if (not override_all) and (not is_calc(cur)):
+                            continue
+                        # If actual key suffix is 'm' and we have M → prefer M
+                        prev = user.get(real_key)
+                        if lt == 'm' and 'M' in row:
+                            user[real_key] = row.get('M', "")
+                        elif lt == 'd':
+                            user[real_key] = row.get('D', "")
+                        elif lt == 'b':
+                            user[real_key] = row.get('B', "")
+                        elif lt == 'c':
+                            user[real_key] = row.get('C', "")
+                        else:
+                            user[real_key] = value
+                        if str(prev) != str(user.get(real_key)):
+                            changed_local += 1
+                        target_assigned = True
+                    if override_all and not target_assigned:
+                        # assign canonical fallback key even if it didn't exist
+                        canonical = {
+                            ('1','c'): 'Bandmass_1_c',
+                            ('2','b'): 'Bandmass_2_b',
+                            ('3','d'): 'Bandmass_3_d',
+                            ('3','m'): 'Bandmass_3_m',
+                        }.get((idx, letter_target))
+                        if canonical:
+                            prev = user.get(canonical)
+                            user[canonical] = value
+                            if str(prev) != str(value):
+                                changed_local += 1
+                    return changed_local
+
+                changed = 0
                 if band_count == 2:
-                    if k_c and is_calc(v_c):
-                        user[k_c] = row.get("C", "")
-                    if k_b and is_calc(v_b):
-                        user[k_b] = row.get("B", "")
-                    if k_d and is_calc(v_d):
-                        user[k_d] = "None"
+                    changed += fill_for('1', 'c', row.get('C', ""))
+                    changed += fill_for('2', 'b', row.get('B', ""))
+                    # for 3rd, set None if present and calc
+                    for i, lt, real_key, cur in present:
+                        if i != '3':
+                            continue
+                        if (override_all or is_calc(cur)):
+                            user[real_key] = "None"; changed += 1
+                    if override_all and not any(i=='3' for i,_,_,_ in present):
+                        user['Bandmass_3_d'] = "None"; changed += 1
                 elif band_count == 3:
-                    if k_c and is_calc(v_c):
-                        user[k_c] = row.get("C", "")
-                    if k_b and is_calc(v_b):
-                        user[k_b] = row.get("B", "")
-                    if k_d and is_calc(v_d):
-                        user[k_d] = row.get("D", "")
+                    changed += fill_for('1', 'c', row.get('C', ""))
+                    changed += fill_for('2', 'b', row.get('B', ""))
+                    # 3rd: prefer D, but if key ends with 'm' use M
+                    if any(i=='3' for i,_,_,_ in present):
+                        for i, lt, real_key, cur in present:
+                            if i != '3':
+                                continue
+                            if (override_all or is_calc(cur)):
+                                if lt == 'm' and 'M' in row:
+                                    user[real_key] = row.get('M', ""); changed += 1
+                                else:
+                                    user[real_key] = row.get('D', ""); changed += 1
+                    else:
+                        # no key present → create canonical depending on availability of M
+                        if 'M' in row:
+                            user['Bandmass_3_m'] = row.get('M', ""); changed += 1
+                        else:
+                            user['Bandmass_3_d'] = row.get('D', ""); changed += 1
                 else:
-                    # Wenn Bandanzahl nicht parsebar (z. B. calc), fülle konservativ C/B und setze D=None
-                    if k_c and is_calc(v_c):
-                        user[k_c] = row.get("C", "")
-                    if k_b and is_calc(v_b):
-                        user[k_b] = row.get("B", "")
-                    if k_d and is_calc(v_d):
-                        user[k_d] = "None"
+                    # Unknown band_count (e.g., calc) → fill 1:C, 2:B, 3:None/D based on key letter
+                    changed += fill_for('1', 'c', row.get('C', ""))
+                    changed += fill_for('2', 'b', row.get('B', ""))
+                    third_set = False
+                    for i, lt, real_key, cur in present:
+                        if i != '3':
+                            continue
+                        if (override_all or is_calc(cur)):
+                            if lt == 'm' and 'M' in row:
+                                user[real_key] = row.get('M', ""); changed += 1; third_set = True
+                            else:
+                                user[real_key] = "None"; changed += 1; third_set = True
+                    if override_all and not third_set:
+                        user['Bandmass_3_d'] = "None"; changed += 1
+                if _is_debug_calc_enabled(cfg):
+                    try:
+                        band_vals = {k: user[k] for k in user.keys() if _normalize_key(k).startswith('bandmass')}
+                        if changed > 0:
+                            print("[Calc] {}: filled band masses (count={}) : {}".format(leader_name, band_count_val, band_vals))
+                        else:
+                            print("[Calc] {}: no changes (override={}) : {}".format(leader_name, _is_override_bandmass_enabled(cfg), band_vals))
+                    except Exception:
+                        pass
             except Exception:
                 pass
     except Exception:
@@ -1133,891 +1284,7 @@ def export_leader_texts(mode=None):
         else:
             final_keys = []
 
-    # Optional: Vorschau anzeigen und Export bestätigen lassen
-    def show_preview_dialog(cfg, leaders, final_keys):
-        try:
-            import Eto.Forms as forms
-            import Eto.Drawing as drawing
-
-            dialog = forms.Dialog()
-            dialog.Title = "Vorschau – Export"
-            layout = forms.DynamicLayout()
-            layout.Spacing = drawing.Size(6, 6)
-            layout.Padding = drawing.Padding(10)
-            try:
-                dialog.ClientSize = drawing.Size(980, 600)
-            except Exception:
-                pass
-            try:
-                dialog.Resizable = True
-            except Exception:
-                pass
-
-            header_cols = ["text", "dimstyle"] + list(final_keys)
-            # Daten vorbereiten (Liste von Dicts)
-            rows = []
-            guid_to_row = {}
-            guid_to_leader = {}
-            pending_changes = {}
-            def add_pending(guid_text, key, value):
-                try:
-                    if not guid_text or key in ("text", "dimstyle", "LeaderGUID"):
-                        return
-                    if guid_text not in pending_changes:
-                        pending_changes[guid_text] = {}
-                    pending_changes[guid_text][key] = "" if value is None else str(value)
-                    try:
-                        if pending_count_lbl is not None:
-                            total = sum(len(v) for v in pending_changes.values())
-                            pending_count_lbl.Text = "Änderungen: {}".format(total)
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-            try:
-                for it in leaders:
-                    try:
-                        gtxt = None
-                        try:
-                            gtxt = it.get("user", {}).get("LeaderGUID")
-                        except Exception:
-                            gtxt = None
-                        if gtxt:
-                            guid_to_leader[str(gtxt)] = it
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            for item in leaders:
-                r = {"text": item.get("text", ""), "dimstyle": item.get("dimstyle", "")}
-                user = item.get("user") or {}
-                for k in final_keys:
-                    try:
-                        r[k] = "" if k not in user else ("" if user.get(k) is None else str(user.get(k)))
-                    except Exception:
-                        r[k] = ""
-                try:
-                    guid_val = user.get("LeaderGUID")
-                except Exception:
-                    guid_val = None
-                # persist guid under two keys: visible map key and internal helper
-                if guid_val is not None:
-                    r["LeaderGUID"] = str(guid_val)
-                r["_guid"] = None if guid_val is None else str(guid_val)
-                rows.append(r)
-                if r.get("_guid"):
-                    guid_to_row[r.get("_guid")] = r
-
-            # Content-Bereich mit Scrollbar, Buttons bleiben unten fix
-            content_panel = forms.DynamicLayout(); content_panel.Spacing = drawing.Size(6, 6)
-            # Suchfeld (wirkt auf beide Ansichten) – direkt neben dem Label platzieren
-            search_lbl = forms.Label(); search_lbl.Text = "Suche:"
-            search_tb = forms.TextBox()
-            try:
-                search_tb.Size = drawing.Size(320, -1)
-            except Exception:
-                pass
-            # separate row mit trailing None hält Feld direkt neben Label links
-            try:
-                content_panel.AddSeparateRow(search_lbl, search_tb, None)
-            except Exception:
-                content_panel.AddRow(search_lbl, search_tb)
-
-            tabs = forms.TabControl()
-            content_panel.AddRow(tabs)
-
-            # 1) Stabile Listenansicht (kompakt)
-            try:
-                list_page = forms.TabPage()
-                list_page.Text = "Liste"
-                listbox = forms.ListBox()
-                compact_rows = []
-                for item in rows:
-                    try:
-                        pairs = []
-                        for k in final_keys:
-                            v = item.get(k, "")
-                            if v is None or str(v).strip() == "":
-                                continue
-                            pairs.append("{}={}".format(k, v))
-                        compact = "{} | {}{}".format(item.get("text", ""), item.get("dimstyle", ""), (" | "+" | ".join(pairs)) if pairs else "")
-                    except Exception:
-                        compact = str(item)
-                    compact_rows.append(compact)
-                listbox.DataStore = compact_rows
-                # Filterfunktion für Liste
-                def apply_filter_list():
-                    try:
-                        s = (search_tb.Text or "").strip().lower()
-                        if not s:
-                            listbox.DataStore = compact_rows
-                            return
-                        filtered = [r for r in compact_rows if s in r.lower()]
-                        listbox.DataStore = filtered
-                    except Exception:
-                        listbox.DataStore = compact_rows
-                search_tb.TextChanged += lambda s, e: apply_filter_list()
-                apply_filter_list()
-                # Scrollable für Liste
-                try:
-                    list_scroll = forms.Scrollable()
-                    list_scroll.Content = listbox
-                    try:
-                        list_scroll.ExpandContentWidth = True
-                        list_scroll.ExpandContentHeight = False
-                    except Exception:
-                        pass
-                    list_page.Content = list_scroll
-                except Exception:
-                    list_page.Content = listbox
-                tabs.Pages.Add(list_page)
-            except Exception:
-                pass
-
-            # 2) Tabellenansicht (Beta) – robust gebaut, kann fehlschlagen ohne Crash
-            grid = None
-            try:
-                grid_page = forms.TabPage(); grid_page.Text = "Tabelle"
-                # TreeGridView mit expliziten TreeGridItem-Objekten (Rhino8/Python3 stabil)
-                grid = forms.TreeGridView()
-                grid.ShowHeader = True
-                grid.AllowMultipleSelection = False
-                grid.Height = 420
-                try:
-                    grid.RowHeight = 22
-                except Exception:
-                    pass
-
-                # Abbildung Spalte -> Feldname ohne Tag nutzen (robuster für ältere Eto-Versionen)
-                try:
-                    # Sichtdaten (werden durch Suche gefiltert)
-                    row_data = list(rows)
-                    row_view_ref = {"data": row_data}
-
-                    # Spalten und Schlüssel in definierter Reihenfolge
-                    col_keys = ["text", "dimstyle"]
-                    def add_col(idx, name, width=None):
-                        col = forms.GridColumn()
-                        col.HeaderText = name
-                        try:
-                            if width:
-                                col.Width = width
-                        except Exception:
-                            pass
-                        # Editable nur für UserText-Keys (nicht für text/dimstyle/LeaderGUID)
-                        try:
-                            col.Editable = (name not in ("text", "dimstyle", "LeaderGUID"))
-                        except Exception:
-                            pass
-                        try:
-                            col.Sortable = True
-                        except Exception:
-                            pass
-                        col.DataCell = forms.TextBoxCell(idx)
-                        grid.Columns.Add(col)
-                        return col
-                    add_col(0, "text", 260)
-                    add_col(1, "dimstyle", 180)
-                    max_cols = 40
-                    for i, k in enumerate(final_keys):
-                        if i >= max_cols:
-                            break
-                        add_col(i + 2, k)
-                        col_keys.append(k)
-                    # ensure LeaderGUID column exists (hidden) to enable 'Element anzeigen'
-                    if "LeaderGUID" not in col_keys:
-                        col_keys.append("LeaderGUID")
-                        try:
-                            _guid_col = add_col(len(col_keys) - 1, "LeaderGUID")
-                            try:
-                                _guid_col.Visible = False
-                            except Exception:
-                                try:
-                                    _guid_col.Width = 0
-                                except Exception:
-                                    pass
-                        except Exception:
-                            pass
-
-                    def build_store(data_rows):
-                        try:
-                            items = forms.TreeGridItemCollection()
-                        except Exception:
-                            items = None
-                        if items is None:
-                            # Hard fallback: build a simple collection-like object
-                            class _SimpleStore(list):
-                                pass
-                            items = _SimpleStore()
-                        for r in data_rows:
-                            try:
-                                vals = ["" if r.get(k) is None else str(r.get(k)) for k in col_keys]
-                            except Exception:
-                                vals = ["" for _ in col_keys]
-                            try:
-                                it = forms.TreeGridItem(vals)
-                            except Exception:
-                                it = forms.TreeGridItem()
-                                it.Values = vals
-                            try:
-                                items.Add(it)
-                            except Exception:
-                                items.append(it)
-                        return items
-
-                    # Sortierung per Spaltenkopf
-                    sort_state = {"key": None, "desc": False}
-                    def on_header_click(sender, e):
-                        try:
-                            # Spaltenindex ermitteln
-                            col_index = -1
-                            try:
-                                for i in range(len(grid.Columns)):
-                                    if grid.Columns[i] == e.Column:
-                                        col_index = i; break
-                            except Exception:
-                                col_index = -1
-                            if col_index < 0 or col_index >= len(col_keys):
-                                return
-                            key = col_keys[col_index]
-                            # Toggle Richtung
-                            if sort_state.get("key") == key:
-                                sort_state["desc"] = not bool(sort_state.get("desc", False))
-                            else:
-                                sort_state["key"] = key
-                                sort_state["desc"] = False
-
-                            data = list(row_view_ref.get("data") or [])
-                            def make_sort_tuple(val):
-                                try:
-                                    if val is None:
-                                        return (2, "")
-                                    s = str(val).strip()
-                                    # numerisch versuchen
-                                    try:
-                                        return (0, float(s.replace(",", ".")))
-                                    except Exception:
-                                        return (1, s.lower())
-                                except Exception:
-                                    return (2, "")
-                            try:
-                                data.sort(key=lambda r: make_sort_tuple(r.get(key)), reverse=bool(sort_state["desc"]))
-                            except Exception:
-                                pass
-                            row_view_ref["data"] = data
-                            grid.DataStore = build_store(data)
-                        except Exception:
-                            pass
-                    # Für TreeGridView existiert kein ColumnHeaderClick-Event in allen Builds; ersatzweise
-                    # klicken wir auf die Headers über Grid.Columns[i].HeaderClick, falls verfügbar.
-                    wired = False
-                    try:
-                        grid.ColumnHeaderClick += on_header_click
-                        wired = True
-                    except Exception:
-                        wired = False
-                    if not wired:
-                        try:
-                            for c in grid.Columns:
-                                try:
-                                    c.HeaderClick += on_header_click
-                                    wired = True
-                                except Exception:
-                                    pass
-                        except Exception:
-                            pass
-
-                    # Unterschiede zwischen sichtbaren Zellenwerten und Baseline zählen
-                    def update_change_counter():
-                        try:
-                            # Index der GUID-Spalte ermitteln
-                            try:
-                                guid_idx = col_keys.index("LeaderGUID")
-                            except Exception:
-                                guid_idx = -1
-                            if guid_idx < 0:
-                                return
-                            # DataStore lesen
-                            try:
-                                datastore = grid.DataStore
-                            except Exception:
-                                datastore = None
-                            if datastore is None:
-                                return
-                            changes = 0
-                            for item in datastore:
-                                try:
-                                    vals = item.Values
-                                except Exception:
-                                    vals = None
-                                if vals is None or guid_idx >= len(vals):
-                                    continue
-                                guid_text = vals[guid_idx]
-                                # Fallback: GUID über Text ermitteln, wenn Spalte leer ist
-                                if not guid_text:
-                                    try:
-                                        t_idx = col_keys.index("text")
-                                    except Exception:
-                                        t_idx = -1
-                                    if t_idx >= 0 and t_idx < len(vals):
-                                        row_txt = vals[t_idx]
-                                        if row_txt:
-                                            try:
-                                                for r in (row_view_ref.get("data") or []):
-                                                    if r.get("text") == row_txt and r.get("_guid"):
-                                                        guid_text = r.get("_guid")
-                                                        break
-                                            except Exception:
-                                                pass
-                                base_row = guid_to_row.get(guid_text)
-                                if not base_row:
-                                    continue
-                                for idx, key in enumerate(col_keys):
-                                    if key in ("text", "dimstyle", "LeaderGUID"):
-                                        continue
-                                    new_val = vals[idx] if idx < len(vals) else ""
-                                    old_val = base_row.get(key, "")
-                                    if str(new_val) != str(old_val):
-                                        changes += 1
-                            try:
-                                pending_count_lbl.Text = "Änderungen: {}".format(changes)
-                            except Exception:
-                                pass
-                        except Exception:
-                            pass
-
-                    # Start der Bearbeitung: schütze schreibgeschützte Spalten
-                    def on_cell_editing(sender, e):
-                        try:
-                            col_index = -1
-                            try:
-                                for i in range(len(grid.Columns)):
-                                    if grid.Columns[i] == e.Column:
-                                        col_index = i; break
-                            except Exception:
-                                col_index = -1
-                            if col_index < 0 or col_index >= len(col_keys):
-                                return
-                            key = col_keys[col_index]
-                            if key in ("text", "dimstyle", "LeaderGUID"):
-                                try:
-                                    e.Cancel = True
-                                except Exception:
-                                    pass
-                        except Exception:
-                            pass
-                    try:
-                        grid.CellEditing += on_cell_editing
-                    except Exception:
-                        pass
-
-                    # Zellenbearbeitung → in Rhino-Objekt (UserText) und lokale Daten zurückschreiben
-                    def on_cell_edited(sender, e):
-                        try:
-                            # Spaltenindex bestimmen
-                            col_index = -1
-                            try:
-                                for i in range(len(grid.Columns)):
-                                    if grid.Columns[i] == e.Column:
-                                        col_index = i; break
-                            except Exception:
-                                col_index = -1
-                            if col_index < 0 or col_index >= len(col_keys):
-                                return
-                            key = col_keys[col_index]
-                            # nicht editierbare Felder ignorieren
-                            if key in ("text", "dimstyle", "LeaderGUID"):
-                                return
-                            vals = None
-                            try:
-                                vals = e.Item.Values
-                            except Exception:
-                                vals = None
-                            if vals is None:
-                                return
-                            new_val = None
-                            if col_index < len(vals):
-                                new_val = vals[col_index]
-                            guid_text = None
-                            try:
-                                gidx = col_keys.index("LeaderGUID")
-                                if gidx < len(vals):
-                                    guid_text = vals[gidx]
-                            except Exception:
-                                guid_text = None
-                            if not guid_text:
-                                # Fallback über Textspalte → Baseline suchen
-                                try:
-                                    t_idx = col_keys.index("text")
-                                    row_txt = vals[t_idx] if t_idx < len(vals) else None
-                                    if row_txt:
-                                        for r in (row_view_ref.get("data") or []):
-                                            if r.get("text") == row_txt and r.get("_guid"):
-                                                guid_text = r.get("_guid"); break
-                                except Exception:
-                                    guid_text = None
-                            if not guid_text:
-                                return
-                            # pending Merker; tatsächliches Schreiben via Commit-Button
-                            add_pending(guid_text, key, new_val)
-                            try:
-                                # Schreibe explizit wieder in die Item-Values, falls der Editor nicht committed hat
-                                e.Item.Values = vals
-                            except Exception:
-                                pass
-                            try:
-                                update_change_counter()
-                            except Exception:
-                                pass
-                            # Baseline nicht sofort verändern (damit Commit Unterschiede erkennt)
-                        except Exception:
-                            pass
-                    try:
-                        grid.CellEdited += on_cell_edited
-                    except Exception:
-                        pass
-
-                    # Alternativ: Doppelklick öffnet kleines Eingabefeld zur Bearbeitung
-                    def prompt_value(title, initial):
-                        try:
-                            import Eto.Forms as forms
-                            import Eto.Drawing as drawing
-                            dlg = forms.Dialog()
-                            dlg.Title = title
-                            layout = forms.DynamicLayout(); layout.Padding = drawing.Padding(10); layout.Spacing = drawing.Size(6,6)
-                            tb = forms.TextBox(); tb.Text = "" if initial is None else str(initial)
-                            layout.AddRow(tb)
-                            okb = forms.Button(); okb.Text = "OK"
-                            cb = forms.Button(); cb.Text = "Abbrechen"
-                            def _ok(s,ev): dlg.Tag = tb.Text; dlg.Close()
-                            def _cb(s,ev): dlg.Tag = None; dlg.Close()
-                            okb.Click += _ok; cb.Click += _cb
-                            layout.AddSeparateRow(None, okb, cb)
-                            dlg.Content = layout; dlg.Tag = None
-                            try:
-                                dlg.ShowModal()
-                            except Exception:
-                                try:
-                                    Rhino.UI.EtoExtensions.ShowSemiModal(dlg, sc.doc, Rhino.UI.RhinoEtoApp.MainWindow)
-                                except Exception:
-                                    dlg.ShowModal(Rhino.UI.RhinoEtoApp.MainWindow)
-                            return dlg.Tag
-                        except Exception:
-                            return None
-
-                    def on_cell_double(sender, e):
-                        try:
-                            r = e.Row; col = e.Column
-                            if r is None or col is None:
-                                return
-                            # Spaltenindex und Key
-                            col_index = -1
-                            try:
-                                for i in range(len(grid.Columns)):
-                                    if grid.Columns[i] == col:
-                                        col_index = i; break
-                            except Exception:
-                                col_index = -1
-                            if col_index < 0 or col_index >= len(col_keys):
-                                return
-                            key = col_keys[col_index]
-                            if key in ("text", "dimstyle", "LeaderGUID"):
-                                return
-                            item = e.Item
-                            if item is None:
-                                return
-                            vals = None
-                            try:
-                                vals = item.Values
-                            except Exception:
-                                vals = None
-                            if vals is None:
-                                return
-                            current = vals[col_index] if col_index < len(vals) else ""
-                            new_val = prompt_value("Wert bearbeiten", current)
-                            if new_val is None:
-                                return
-                            # schreibe in UI-Item (damit Commit-Vergleich greift)
-                            try:
-                                if col_index < len(vals):
-                                    vals[col_index] = new_val
-                                else:
-                                    return
-                            except Exception:
-                                pass
-                            # Sicherstellen, dass Werte im Item aktualisiert werden
-                            try:
-                                e.Item.Values = vals
-                            except Exception:
-                                pass
-                            # GUID holen
-                            guid_text = None
-                            try:
-                                gidx = col_keys.index("LeaderGUID")
-                                if gidx < len(vals):
-                                    guid_text = vals[gidx]
-                            except Exception:
-                                guid_text = None
-                            if not guid_text:
-                                # Fallback über Textspalte → Baseline suchen
-                                try:
-                                    t_idx = col_keys.index("text")
-                                    row_txt = vals[t_idx] if t_idx < len(vals) else None
-                                    if row_txt:
-                                        for r in (row_view_ref.get("data") or []):
-                                            if r.get("text") == row_txt and r.get("_guid"):
-                                                guid_text = r.get("_guid"); break
-                                except Exception:
-                                    guid_text = None
-                            if guid_text:
-                                add_pending(guid_text, key, new_val)
-                                update_change_counter()
-                        except Exception:
-                            pass
-                    # Binde Doppelklick-Event
-                    bound = False
-                    try:
-                        grid.CellDoubleClick += on_cell_double
-                        bound = True
-                    except Exception:
-                        bound = False
-                    if not bound:
-                        try:
-                            grid.DoubleClick += on_cell_double
-                        except Exception:
-                            pass
-
-                    def apply_filter_grid():
-                        try:
-                            s = (search_tb.Text or "").strip().lower()
-                            if not s:
-                                row_view_ref["data"] = row_data
-                                grid.DataStore = build_store(row_view_ref["data"])
-                                return
-                            filtered_rows = []
-                            for r in row_data:
-                                try:
-                                    joined = " ".join([str(v) for v in r.values() if v is not None]).lower()
-                                    if s in joined:
-                                        filtered_rows.append(r)
-                                except Exception:
-                                    pass
-                            row_view_ref["data"] = filtered_rows
-                            grid.DataStore = build_store(filtered_rows)
-                        except Exception as _ex:
-                            row_view_ref["data"] = row_data
-                            grid.DataStore = build_store(row_view_ref["data"])
-                    search_tb.TextChanged += lambda s, e: apply_filter_grid()
-                    # Erste Füllung: vollständige Daten zuweisen
-                    row_view_ref["data"] = row_data
-                    grid.DataStore = build_store(row_view_ref["data"])
-
-                except Exception as grid_build_ex:
-                    print("[Preview] Tabellen-Setup fehlgeschlagen:", grid_build_ex)
-
-                # Scrollable für Tabelle
-                try:
-                    grid_scroll = forms.Scrollable()
-                    grid_scroll.Content = grid
-                    grid_scroll.ExpandContentWidth = True
-                    grid_scroll.ExpandContentHeight = False
-                    grid_page.Content = grid_scroll
-                except Exception:
-                    grid_page.Content = grid
-                tabs.Pages.Add(grid_page)
-            except Exception as grid_ex:
-                print("[Preview] Tabellenansicht deaktiviert:", grid_ex)
-
-            count_lbl = forms.Label();
-            try:
-                count_lbl.Text = "{} Leader in der Vorschau".format(len(leaders))
-            except Exception:
-                count_lbl.Text = "{} Leader in der Vorschau".format(len(leaders))
-            layout.AddRow(count_lbl)
-
-            # Content in Scrollable, Buttons bleiben sichtbar
-            try:
-                scroll = forms.Scrollable()
-                scroll.Content = content_panel
-                scroll.ExpandContentWidth = True
-                scroll.ExpandContentHeight = False
-                layout.AddRow(scroll)
-            except Exception:
-                layout.AddRow(content_panel)
-
-            btn_export = forms.Button(); btn_export.Text = "Exportieren"
-            btn_cancel = forms.Button(); btn_cancel.Text = "Abbrechen"
-            btn_show = forms.Button(); btn_show.Text = "Element anzeigen"
-            btn_commit = forms.Button(); btn_commit.Text = "Commit Changes"
-            pending_count_lbl = forms.Label(); pending_count_lbl.Text = "Änderungen: 0"
-            # Periodischer Refresh des Änderungscounters (falls Edit-Events nicht feuern)
-            try:
-                import Eto.Forms as forms
-                changes_timer = forms.UITimer()
-                try:
-                    changes_timer.Interval = 0.5
-                except Exception:
-                    pass
-                def _tick(s, e):
-                    try:
-                        update_change_counter()
-                    except Exception:
-                        pass
-                changes_timer.Elapsed += _tick
-                try:
-                    changes_timer.Start()
-                except Exception:
-                    pass
-            except Exception:
-                pass
-            def on_export(sender, e):
-                dialog.Tag = True
-                dialog.Close()
-            def on_cancel(sender, e):
-                dialog.Tag = False
-                dialog.Close()
-            def on_show(sender, e):
-                try:
-                    sel = None
-                    try:
-                        sel = grid.SelectedItem
-                    except Exception:
-                        sel = None
-                    if sel is None:
-                        return
-                    vals = None
-                    try:
-                        vals = sel.Values
-                    except Exception:
-                        vals = None
-                    guid_text = None
-                    # read guid from hidden column when possible
-                    if vals is not None:
-                        try:
-                            gidx = col_keys.index("LeaderGUID")
-                            if gidx < len(vals):
-                                guid_text = vals[gidx]
-                        except Exception:
-                            guid_text = None
-                    # Fallback via current view rows matching text
-                    if not guid_text:
-                        try:
-                            tidx = col_keys.index("text")
-                            txt = vals[tidx] if (vals and tidx < len(vals)) else None
-                            if txt:
-                                for r in (row_view_ref.get("data") or []):
-                                    if r.get("text") == txt and r.get("_guid"):
-                                        guid_text = r.get("_guid"); break
-                        except Exception:
-                            pass
-                    if not guid_text:
-                        return
-                    try:
-                        import System
-                        guid_obj = System.Guid(guid_text)
-                    except Exception:
-                        guid_obj = None
-                    if guid_obj:
-                        try:
-                            rs.UnselectAllObjects()
-                        except Exception:
-                            pass
-                        try:
-                            rs.SelectObject(guid_obj)
-                            rs.ZoomSelected()
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-            btn_export.Click += on_export; btn_cancel.Click += on_cancel
-            try:
-                btn_show.Click += on_show
-            except Exception:
-                pass
-            def on_commit(sender, e):
-                try:
-                    total = 0
-                    # Ensure we target the active Rhino document
-                    try:
-                        active_doc = Rhino.RhinoDoc.ActiveDoc
-                        if active_doc is not None:
-                            sc.doc = active_doc
-                    except Exception:
-                        pass
-                    # Helper: write UserText using RhinoCommon (more reliable than rs in some contexts)
-                    def _write_usertext(obj_guid, key, val):
-                        try:
-                            ro = None
-                            try:
-                                ro = sc.doc.Objects.FindId(obj_guid)
-                            except Exception:
-                                ro = None
-                            if ro is None:
-                                return False
-                            # Do not modify locked objects
-                            try:
-                                if ro.IsLocked:
-                                    return False
-                            except Exception:
-                                pass
-                            try:
-                                attrs = ro.Attributes.Duplicate()
-                            except Exception:
-                                attrs = None
-                            if attrs is None:
-                                return False
-                            try:
-                                attrs.SetUserString(key, "" if val is None else str(val))
-                            except Exception:
-                                return False
-                            try:
-                                ok = sc.doc.Objects.ModifyAttributes(ro, attrs, True)
-                            except Exception:
-                                ok = False
-                            return bool(ok)
-                        except Exception:
-                            return False
-                    # Batch under one undo record
-                    undo_rec = None
-                    try:
-                        undo_rec = sc.doc.BeginUndoRecord("Leader Preview Commit")
-                    except Exception:
-                        undo_rec = None
-                    # 1) Änderungen aus DataStore direkt ermitteln (robust, unabhängig von Edit-Events)
-                    try:
-                        gidx = col_keys.index("LeaderGUID")
-                    except Exception:
-                        gidx = -1
-                    try:
-                        ds = grid.DataStore
-                    except Exception:
-                        ds = None
-                    if ds is not None and gidx >= 0:
-                        try:
-                            import System
-                            for it in ds:
-                                try:
-                                    vals = it.Values
-                                except Exception:
-                                    vals = None
-                                if vals is None or gidx >= len(vals):
-                                    continue
-                                gtxt = vals[gidx]
-                                # Fallback: GUID aus Textspalte ermitteln
-                                if not gtxt:
-                                    try:
-                                        t_idx = col_keys.index("text")
-                                    except Exception:
-                                        t_idx = -1
-                                    if t_idx >= 0 and t_idx < len(vals):
-                                        row_txt = vals[t_idx]
-                                        if row_txt:
-                                            try:
-                                                for r in (row_view_ref.get("data") or []):
-                                                    if r.get("text") == row_txt and r.get("_guid"):
-                                                        gtxt = r.get("_guid")
-                                                        break
-                                            except Exception:
-                                                pass
-                                if not gtxt:
-                                    continue
-                                try:
-                                    obj_id = System.Guid(gtxt)
-                                except Exception:
-                                    obj_id = None
-                                if obj_id is None:
-                                    continue
-                                # Vergleiche alle editierbaren Spalten
-                                for c_index, key in enumerate(col_keys):
-                                    if key in ("text", "dimstyle", "LeaderGUID"):
-                                        continue
-                                    new_val = vals[c_index] if c_index < len(vals) else ""
-                                    old_val = None
-                                    try:
-                                        row = guid_to_row.get(gtxt)
-                                        if row is not None:
-                                            old_val = row.get(key, "")
-                                    except Exception:
-                                        old_val = None
-                                    if str(new_val) != str(old_val):
-                                        try:
-                                            if _write_usertext(obj_id, key, new_val):
-                                                total += 1
-                                        except Exception:
-                                            pass
-                                        try:
-                                            if row is not None:
-                                                row[key] = "" if new_val is None else str(new_val)
-                                        except Exception:
-                                            pass
-                                        try:
-                                            li = guid_to_leader.get(gtxt)
-                                            if li is not None:
-                                                li.get("user", {})[key] = "" if new_val is None else str(new_val)
-                                        except Exception:
-                                            pass
-                        except Exception:
-                            pass
-                    # 2) Zusätzlich noch event-basierte pending_changes abarbeiten (falls vorhanden)
-                    for gtxt, kv in list(pending_changes.items()):
-                        try:
-                            import System
-                            obj_id = System.Guid(gtxt)
-                        except Exception:
-                            obj_id = None
-                        if obj_id is None:
-                            continue
-                        for k, v in kv.items():
-                            try:
-                                if _write_usertext(obj_id, k, v):
-                                    total += 1
-                            except Exception:
-                                pass
-                    # Close undo record and refresh views
-                    try:
-                        if undo_rec is not None:
-                            sc.doc.EndUndoRecord(undo_rec)
-                    except Exception:
-                        pass
-                    try:
-                        sc.doc.Views.Redraw()
-                    except Exception:
-                        pass
-                    # Clear nach Commit
-                    pending_changes.clear()
-                    try:
-                        pending_count_lbl.Text = "Änderungen: 0"
-                    except Exception:
-                        pass
-                    try:
-                        print("[Preview] Commit: {} Werte in UserText geschrieben.".format(total))
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-            try:
-                btn_commit.Click += on_commit
-            except Exception:
-                pass
-            layout.AddSeparateRow(None, pending_count_lbl, btn_show, btn_commit, btn_export, btn_cancel)
-
-            dialog.Content = layout
-            dialog.Tag = False
-            # Stabil: erst SemiModal versuchen, dann Modal als Fallback
-            try:
-                Rhino.UI.EtoExtensions.ShowSemiModal(dialog, sc.doc, Rhino.UI.RhinoEtoApp.MainWindow)
-            except Exception:
-                try:
-                    dialog.ShowModal()
-                except Exception:
-                    try:
-                        dialog.ShowModal(Rhino.UI.RhinoEtoApp.MainWindow)
-                    except Exception:
-                        return True
-            return bool(dialog.Tag)
-        except Exception as e:
-            print("[Preview] Fehler beim Aufbau der Vorschau:", e)
-            return True
+    # Optional: Vorschau anzeigen und Export bestätigen lassen (ausgelagert in export_ui.show_preview_dialog)
 
     if preview_before_export:
         # apply auto-fill rules before showing preview, so users see final export values
@@ -2030,7 +1297,7 @@ def export_leader_texts(mode=None):
             final_keys = _reorder_final_keys(cfg, final_keys, target_styles)
         except Exception:
             pass
-        proceed = show_preview_dialog(cfg, leaders, final_keys)
+        proceed = ui_show_preview(cfg, leaders, final_keys)
         if not proceed:
             print("[Export] Abgebrochen nach Vorschau.")
             return
@@ -2061,29 +1328,7 @@ def export_leader_texts(mode=None):
 
     # TXT (wie bisher)
     if mode in ("txt", "csv"):
-        with open(output_path_txt, "w", encoding="utf-8") as file:
-            for line in export_lines_text:
-                file.write(line + "\n")
-        # Statistik
-        stats_lines = ["--- Übersicht pro Bemaßungsstil ---"]
-        # Gesamtsumme über alle gezählten Stile
-        total = sum(style_counts.values())
-        if target_styles:
-            # zuerst die konfigurierten Stile in der gewünschten Reihenfolge
-            for style in target_styles:
-                count = style_counts.get(style, 0)
-            stats_lines.append(f"{style}: {count}")
-            # anschließend alle übrigen Stile alphabetisch
-            extra_styles = [s for s in style_counts.keys() if s not in target_styles]
-            for style in sorted(extra_styles):
-                stats_lines.append(f"{style}: {style_counts[style]}")
-        else:
-            for style in sorted(style_counts.keys()):
-                stats_lines.append(f"{style}: {style_counts[style]}")
-        stats_lines.append(f"Total: {total} Leader")
-        with open(output_path_stats, "w", encoding="utf-8") as stats_file:
-            for line in stats_lines:
-                stats_file.write(line + "\n")
+        write_txt_and_stats(output_path_txt, output_path_stats, export_lines_text, style_counts, target_styles)
         print(f"{len(leaders)} Leader exportiert (TXT):\n{output_path_txt}")
         print(f"Statistik gespeichert in:\n{output_path_stats}")
         return
@@ -2091,8 +1336,6 @@ def export_leader_texts(mode=None):
     # XLSX
     if mode == "xlsx":
         try:
-            import xlsxwriter
-
             na_value = cfg.get("export", {}).get("na_value", "NA")
 
             # reorder final_keys again for the actual export
@@ -2102,55 +1345,7 @@ def export_leader_texts(mode=None):
                 pass
             header = ["text", "dimstyle"] + final_keys
 
-            workbook = xlsxwriter.Workbook(output_path_xlsx)
-            ws = workbook.add_worksheet("leaders")
-
-            # Header
-            for c, name in enumerate(header):
-                ws.write(0, c, name)
-
-            # Datenzeilen + CSV-Mirror vorbereiten
-            row_idx = 1
-            csv_rows = []
-            csv_rows.append(header)
-            for item in leaders:
-                row_vals = [item["text"], item["dimstyle"]]
-                user = item["user"]
-                for key in final_keys:
-                    row_vals.append(normalize_value_for_excel(user.get(key, na_value), na_value))
-                for c, val in enumerate(row_vals):
-                    ws.write(row_idx, c, val)
-                csv_rows.append([str(v) if v is not None else "" for v in row_vals])
-                row_idx += 1
-
-            # Stats-Sheet
-            ws2 = workbook.add_worksheet("stats")
-            ws2.write(0, 0, "style")
-            ws2.write(0, 1, "count")
-            r = 1
-            total = sum(style_counts.values())
-            if target_styles:
-                for style in target_styles:
-                    ws2.write(r, 0, style); ws2.write(r, 1, style_counts.get(style, 0)); r += 1
-                extra = [s for s in style_counts.keys() if s not in target_styles]
-                for style in sorted(extra):
-                    ws2.write(r, 0, style); ws2.write(r, 1, style_counts[style]); r += 1
-            else:
-                for style in sorted(style_counts.keys()):
-                    ws2.write(r, 0, style); ws2.write(r, 1, style_counts[style]); r += 1
-            ws2.write(r, 0, "Total"); ws2.write(r, 1, total)
-
-            workbook.close()
-            # CSV-Mirror neben der XLSX schreiben (für Import ohne openpyxl)
-            try:
-                csv_path = os.path.splitext(output_path_xlsx)[0] + ".csv"
-                import io, csv as _csv
-                with io.open(csv_path, "w", encoding="utf-8", newline="") as f:
-                    writer = _csv.writer(f)
-                    for row in csv_rows:
-                        writer.writerow(row)
-            except Exception:
-                pass
+            write_xlsx(output_path_xlsx, leaders, [k for k in final_keys], style_counts, target_styles, na_value)
             print(f"{len(leaders)} Leader exportiert (XLSX via xlsxwriter):\n{output_path_xlsx}")
             return
 
