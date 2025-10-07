@@ -15,6 +15,12 @@ def group_radio_buttons(forms, drawing):
     return rb_desktop, rb_doc
 
 def show_preview_dialog(cfg, leaders, final_keys):
+    print("[Preview] ========================================")
+    print("[Preview] show_preview_dialog() called")
+    print("[Preview] Number of leaders:", len(leaders) if leaders else 0)
+    print("[Preview] Number of keys:", len(final_keys) if final_keys else 0)
+    print("[Preview] ========================================")
+    
     try:
         import rhinoscriptsyntax as rs
         import scriptcontext as sc
@@ -22,9 +28,10 @@ def show_preview_dialog(cfg, leaders, final_keys):
         import Eto.Forms as forms
         import Eto.Drawing as drawing
         from rhino_sync import write_usertext_ui as _write_usertext_ui
+        print("[Preview] All imports successful")
     except Exception as e:
         try:
-            print("[Preview] UI not available:", e)
+            print("[Preview] UI imports failed:", e)
         except Exception:
             pass
         return True
@@ -47,13 +54,18 @@ def show_preview_dialog(cfg, leaders, final_keys):
 
         dialog = forms.Dialog()
         dialog.Title = "Vorschau – Export"
-        layout = forms.DynamicLayout()
-        layout.Spacing = drawing.Size(6, 6)
-        layout.Padding = drawing.Padding(10)
+        
         try:
-            dialog.ClientSize = drawing.Size(980, 600)
-        except Exception:
-            pass
+            # Larger dialog to accommodate content
+            dialog.ClientSize = drawing.Size(1400, 700)
+            print("[Preview] Set dialog ClientSize to 1400x700")
+        except Exception as ex:
+            print("[Preview] Failed to set ClientSize:", ex)
+        try:
+            dialog.MinimumSize = drawing.Size(900, 600)
+            print("[Preview] Set dialog MinimumSize to 900x600")
+        except Exception as ex:
+            print("[Preview] Failed to set MinimumSize:", ex)
         try:
             dialog.Resizable = True
         except Exception:
@@ -131,7 +143,7 @@ def show_preview_dialog(cfg, leaders, final_keys):
             grid = forms.TreeGridView()
             grid.ShowHeader = True
             grid.AllowMultipleSelection = False
-            grid.Height = 420
+            # Height will be controlled by Scrollable container
             try:
                 grid.RowHeight = 22
             except Exception:
@@ -140,21 +152,45 @@ def show_preview_dialog(cfg, leaders, final_keys):
             row_view_ref = {"data": row_data}
             col_keys = ["text", "dimstyle"]
             def add_col(idx, name, width=None):
-                col = forms.GridColumn(); col.HeaderText = name
+                col = forms.GridColumn()
+                col.HeaderText = name
+                col.DataCell = forms.TextBoxCell(idx)
+                
+                # Set explicit width (CRITICAL for horizontal scrollbar)
                 try:
-                    if width:
+                    if width is not None and width > 0:
                         col.Width = width
+                    else:
+                        col.Width = 120  # Default width
+                    print("[Preview] Column '{}' width set to: {}".format(name, col.Width if width else 120))
+                except Exception as ex:
+                    print("[Preview] Failed to set column width for '{}': {}".format(name, ex))
+                
+                # Disable auto-sizing (CRITICAL - prevents auto-fit to container)
+                try:
+                    col.AutoSize = False
+                    print("[Preview] Column '{}' AutoSize disabled".format(name))
+                except Exception as ex:
+                    print("[Preview] AutoSize not available for column '{}'".format(name))
+                
+                # Allow manual resizing
+                try:
+                    col.Resizable = True
                 except Exception:
                     pass
+                
+                # Set editability
                 try:
                     col.Editable = (name not in ("text", "dimstyle", "LeaderGUID"))
                 except Exception:
                     pass
+                
+                # Enable sorting
                 try:
                     col.Sortable = True
                 except Exception:
                     pass
-                col.DataCell = forms.TextBoxCell(idx)
+                
                 grid.Columns.Add(col)
                 return col
             add_col(0, "text", 260)
@@ -163,6 +199,7 @@ def show_preview_dialog(cfg, leaders, final_keys):
             for i, k in enumerate(final_keys):
                 if i >= max_cols:
                     break
+                # Width is now set by default in add_col function
                 add_col(i + 2, k)
                 col_keys.append(k)
             if "LeaderGUID" not in col_keys:
@@ -524,22 +561,88 @@ def show_preview_dialog(cfg, leaders, final_keys):
             except Exception:
                 pass
 
-        count_lbl = forms.Label();
+        # BUILD MAIN LAYOUT using TableLayout for precise control
+        print("[Preview] ===== Starting layout construction =====")
+        count_lbl = forms.Label()
         try:
             count_lbl.Text = "{} Leader in der Vorschau".format(len(leaders))
-        except Exception:
-            count_lbl.Text = "{} Leader in der Vorschau".format(len(leaders))
-        layout.AddRow(count_lbl)
+            print("[Preview] Count label created:", count_lbl.Text)
+        except Exception as ex:
+            count_lbl.Text = "Leader in der Vorschau"
+            print("[Preview] Failed to set count label text:", ex)
         
-        # Add search box to main layout
-        layout.AddRow(search_lbl, search_tb)
-        
-        # Add grid directly to main layout
+        # Configure grid for scrolling (TreeGridView has built-in scroll support)
         if grid is not None:
             try:
-                layout.AddRow(grid)
+                # Don't set fixed width - let TreeGridView handle its own scrolling
+                # Just ensure it has enough height
+                try:
+                    grid.Height = 450  # Fixed height to enable vertical scrollbar
+                    print("[Preview] Set grid height to 450")
+                except Exception as ex:
+                    print("[Preview] Failed to set grid height:", ex)
             except Exception as ex:
-                print("[Preview] Failed to add grid to layout:", ex)
+                print("[Preview] Failed to configure grid:", ex)
+        else:
+            print("[Preview] WARNING: Grid is None!")
+        
+        # Create main layout with TableLayout for better control
+        try:
+            print("[Preview] Creating TableLayout...")
+            main_table = forms.TableLayout()
+            main_table.Padding = drawing.Padding(10)
+            main_table.Spacing = drawing.Size(5, 5)
+            print("[Preview] TableLayout created successfully")
+        except Exception as ex:
+            print("[Preview] CRITICAL: Failed to create TableLayout:", ex)
+            import traceback
+            traceback.print_exc()
+            raise
+        
+        # Row 0: Count label
+        try:
+            print("[Preview] Adding count label row...")
+            # TableRow needs TableCell, not raw controls!
+            main_table.Rows.Add(forms.TableRow(forms.TableCell(count_lbl, scaleWidth=True)))
+            print("[Preview] Count label row added")
+        except Exception as ex:
+            print("[Preview] ERROR adding count label:", ex)
+            import traceback
+            traceback.print_exc()
+        
+        # Row 1: Search box
+        try:
+            print("[Preview] Creating search box row...")
+            # Create horizontal layout for search label + textbox
+            search_row = forms.TableLayout()
+            search_row.Spacing = drawing.Size(5, 5)
+            search_row.Rows.Add(forms.TableRow(
+                forms.TableCell(search_lbl),
+                forms.TableCell(search_tb, scaleWidth=True)
+            ))
+            main_table.Rows.Add(forms.TableRow(forms.TableCell(search_row, scaleWidth=True)))
+            print("[Preview] Search box added to layout")
+        except Exception as ex:
+            print("[Preview] ERROR adding search box:", ex)
+            import traceback
+            traceback.print_exc()
+        
+        # Row 2: Grid (scalable)
+        if grid is not None:
+            try:
+                print("[Preview] Adding grid row...")
+                # Grid needs to be in a TableCell, and the row should scale vertically
+                grid_cell = forms.TableCell(grid, scaleWidth=True)
+                grid_row = forms.TableRow(grid_cell)
+                grid_row.ScaleHeight = True  # Allow this row to expand vertically
+                main_table.Rows.Add(grid_row)
+                print("[Preview] Grid added to layout")
+            except Exception as ex:
+                print("[Preview] ERROR adding grid:", ex)
+                import traceback
+                traceback.print_exc()
+        else:
+            print("[Preview] Skipping grid row (grid is None)")
 
         btn_export = forms.Button(); btn_export.Text = "Exportieren"
         btn_cancel = forms.Button(); btn_cancel.Text = "Abbrechen"
@@ -857,20 +960,49 @@ def show_preview_dialog(cfg, leaders, final_keys):
         except Exception:
             pass
 
-        layout.AddSeparateRow(None, pending_count_lbl, btn_show, btn_commit, btn_export, btn_cancel)
+        # Row 3: Buttons
+        try:
+            print("[Preview] Creating button row...")
+            button_row = forms.TableLayout()
+            button_row.Spacing = drawing.Size(5, 5)
+            # All controls must be wrapped in TableCell!
+            button_row.Rows.Add(forms.TableRow(
+                forms.TableCell(None, scaleWidth=True),  # Stretcher to push buttons right
+                forms.TableCell(pending_count_lbl),
+                forms.TableCell(btn_show),
+                forms.TableCell(btn_commit),
+                forms.TableCell(btn_export),
+                forms.TableCell(btn_cancel)
+            ))
+            main_table.Rows.Add(forms.TableRow(forms.TableCell(button_row, scaleWidth=True)))
+            print("[Preview] Buttons added to layout")
+        except Exception as ex:
+            print("[Preview] ERROR adding buttons:", ex)
+            import traceback
+            traceback.print_exc()
 
         # designate default/abort buttons to improve behavior across Rhino/Eto versions
         try:
             dialog.DefaultButton = btn_export
-        except Exception:
-            pass
+            print("[Preview] Set DefaultButton")
+        except Exception as ex:
+            print("[Preview] Failed to set DefaultButton:", ex)
         try:
             dialog.AbortButton = btn_cancel
-        except Exception:
-            pass
+            print("[Preview] Set AbortButton")
+        except Exception as ex:
+            print("[Preview] Failed to set AbortButton:", ex)
 
-        dialog.Content = layout
-        dialog.Tag = False  # Initialize return value
+        try:
+            print("[Preview] Setting dialog.Content to main_table...")
+            dialog.Content = main_table  # Use TableLayout instead of DynamicLayout
+            dialog.Tag = False  # Initialize return value
+            print("[Preview] Dialog content set successfully - ready to show!")
+        except Exception as ex:
+            print("[Preview] CRITICAL ERROR setting dialog.Content:", ex)
+            import traceback
+            traceback.print_exc()
+            raise
         # Global key bindings (Enter=Export, Escape=Abbrechen) on dialog and main widgets
         try:
             def _on_key_down(s, e):
@@ -902,27 +1034,47 @@ def show_preview_dialog(cfg, leaders, final_keys):
         except Exception:
             pass
         # Show modal dialog and get return value from dialog.Tag
+        print("[Preview] ===== Attempting to show dialog =====")
         try:
             try:
                 dialog.Owner = Rhino.UI.RhinoEtoApp.MainWindow
-            except Exception:
-                pass
+                print("[Preview] Dialog owner set to RhinoEtoApp.MainWindow")
+            except Exception as ex:
+                print("[Preview] Failed to set dialog owner:", ex)
+            print("[Preview] Calling dialog.ShowModal()...")
             dialog.ShowModal()
-        except Exception:
+            print("[Preview] Dialog closed normally")
+        except Exception as show_ex:
+            print("[Preview] ShowModal failed, trying alternatives:", show_ex)
             try:
+                print("[Preview] Trying ShowSemiModal...")
                 Rhino.UI.EtoExtensions.ShowSemiModal(dialog, sc.doc, Rhino.UI.RhinoEtoApp.MainWindow)
-            except Exception:
+                print("[Preview] ShowSemiModal succeeded")
+            except Exception as semi_ex:
+                print("[Preview] ShowSemiModal failed:", semi_ex)
                 try:
+                    print("[Preview] Trying ShowModal with owner parameter...")
                     dialog.ShowModal(Rhino.UI.RhinoEtoApp.MainWindow)
-                except Exception:
+                    print("[Preview] ShowModal with owner succeeded")
+                except Exception as modal_ex:
+                    print("[Preview] All dialog show methods failed:", modal_ex)
+                    import traceback
+                    traceback.print_exc()
                     return True
         # Return the value set in dialog.Tag by button handlers
-        return bool(dialog.Tag) if dialog.Tag is not None else True
+        result = bool(dialog.Tag) if dialog.Tag is not None else True
+        print("[Preview] Dialog result:", result)
+        return result
     except Exception as e:
         try:
-            print("[Preview] Fehler beim Aufbau der Vorschau:", e)
-        except Exception:
-            pass
+            print("[Preview] !!!!! CRITICAL ERROR beim Aufbau der Vorschau !!!!!")
+            print("[Preview] Error type:", type(e).__name__)
+            print("[Preview] Error message:", str(e))
+            import traceback
+            print("[Preview] Full traceback:")
+            traceback.print_exc()
+        except Exception as print_ex:
+            print("[Preview] Could not print error details:", print_ex)
         return True
 
 
