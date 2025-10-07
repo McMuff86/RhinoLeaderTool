@@ -1127,6 +1127,74 @@ def _reorder_final_keys(cfg, final_keys, target_styles):
     except Exception:
         return final_keys
 
+def _load_leaders_from_document(target_styles, required_keys, export_all_keys=True, selected_keys=None, cfg=None):
+    """Load all leaders from the document with their UserText.
+    
+    Returns: (leaders, all_user_keys, style_counts, export_lines_text)
+    """
+    export_lines_text = []
+    leaders = []
+    all_user_keys = []
+    style_counts = defaultdict(int)
+    
+    for obj in sc.doc.Objects:
+        try:
+            geom = obj.Geometry
+        except Exception:
+            continue
+        if isinstance(geom, Rhino.Geometry.Leader):
+            leader = geom
+            dimstyle_id = leader.DimensionStyleId
+            dimstyle = sc.doc.DimStyles.FindId(dimstyle_id)
+            
+            style_ok = True if not target_styles else (dimstyle is not None and dimstyle.Name in target_styles)
+            if style_ok:
+                text = leader.Text.replace('\r\n', ' ').replace('\n', ' ')
+                
+                user_text_pairs = []
+                user_dict = {}
+                keys = obj.Attributes.GetUserStrings()
+                if keys:
+                    for key in keys.AllKeys:
+                        if (not export_all_keys) and (selected_keys is not None) and (key not in selected_keys):
+                            continue
+                        value = keys[key]
+                        user_text_pairs.append(f"{key}={value}")
+                        if key not in user_dict:
+                            user_dict[key] = value
+                        if key not in all_user_keys:
+                            all_user_keys.append(key)
+                
+                leader_guid = str(obj.Id)
+                if "LeaderGUID" not in user_dict or not user_dict.get("LeaderGUID"):
+                    user_dict["LeaderGUID"] = leader_guid
+                if "LeaderGUID" not in required_keys and "LeaderGUID" not in all_user_keys:
+                    all_user_keys.append("LeaderGUID")
+                
+                full_line = text
+                if user_text_pairs:
+                    full_line += " | " + " | ".join(user_text_pairs)
+                
+                floor_rank = None
+                try:
+                    if cfg and (cfg.get("export", {}).get("floor_sort", False)):
+                        rules = load_export_sorting_rules(cfg)
+                        floor_rank = compute_floor_rank(text, cfg, rules)
+                except Exception:
+                    floor_rank = None
+                
+                export_lines_text.append(full_line)
+                leaders.append({
+                    "text": text,
+                    "dimstyle": dimstyle.Name,
+                    "user": user_dict,
+                    "_floor_rank": floor_rank
+                })
+                style_name = dimstyle.Name if dimstyle else "Unknown"
+                style_counts[style_name] += 1
+    
+    return leaders, all_user_keys, style_counts, export_lines_text
+
 def export_leader_texts(mode=None):
     cfg = load_config()
     # Ziel-Bemaßungsstile (per Dialog auswählbar) + optionale Pfadangaben
@@ -1193,77 +1261,10 @@ def export_leader_texts(mode=None):
         output_path_xlsx = os.path.join(base_dir, f"{base_name}_leader_export.xlsx")
         return output_path_txt, output_path_stats, output_path_xlsx
 
-    # Sammellisten
-    export_lines_text = []
-    leaders = []  # strukturierte Liste für XLSX
-    all_user_keys = []  # zusätzlich entdeckte Keys (nicht in required)
-    style_counts = defaultdict(int)
-
-    for obj in sc.doc.Objects:
-        try:
-            geom = obj.Geometry
-        except Exception:
-            continue
-        # Robuste Erkennung eines Leaders über die Geometrie
-        if isinstance(geom, Rhino.Geometry.Leader):
-            leader = geom
-            dimstyle_id = leader.DimensionStyleId
-            dimstyle = sc.doc.DimStyles.FindId(dimstyle_id)
-
-            # Wenn keine Zielstile konfiguriert sind: alle akzeptieren
-            style_ok = True if not target_styles else (dimstyle is not None and dimstyle.Name in target_styles)
-            if style_ok:
-                # Basis-Text
-                text = leader.Text.replace('\r\n', ' ').replace('\n', ' ')
-                
-                # UserText ermitteln (als Dict und Text)
-                user_text_pairs = []
-                user_dict = {}
-                keys = obj.Attributes.GetUserStrings()
-                if keys:
-                    for key in keys.AllKeys:
-                        # optional Filter anhand Dialogauswahl
-                        if (not export_all_keys) and (selected_keys is not None) and (key not in selected_keys):
-                            continue
-                        value = keys[key]
-                        user_text_pairs.append(f"{key}={value}")
-                        if key not in user_dict:
-                            user_dict[key] = value
-                        if key not in all_user_keys:
-                            all_user_keys.append(key)
-
-                # LeaderGUID sicherstellen
-                leader_guid = str(obj.Id)
-                if "LeaderGUID" not in user_dict or not user_dict.get("LeaderGUID"):
-                    user_dict["LeaderGUID"] = leader_guid
-                # Stelle sicher, dass LeaderGUID am Ende in den Spalten ist (falls nicht in required)
-                if "LeaderGUID" not in required_keys and "LeaderGUID" not in all_user_keys:
-                    all_user_keys.append("LeaderGUID")
-
-                # TXT-Zeile aufbauen
-                full_line = text
-                if user_text_pairs:
-                    full_line += " | " + " | ".join(user_text_pairs)
-
-                # add optional floor sort rank for known keys
-                floor_rank = None
-                try:
-                    if (cfg.get("export", {}).get("floor_sort", False)):
-                        rules = load_export_sorting_rules(cfg)
-                        # per user: source = leader text
-                        floor_rank = compute_floor_rank(text, cfg, rules)
-                except Exception:
-                    floor_rank = None
-
-                export_lines_text.append(full_line)
-                leaders.append({
-                    "text": text,
-                    "dimstyle": dimstyle.Name,
-                    "user": user_dict,
-                    "_floor_rank": floor_rank
-                })
-                style_name = dimstyle.Name if dimstyle else "Unknown"
-                style_counts[style_name] += 1
+    # Load leaders from document
+    leaders, all_user_keys, style_counts, export_lines_text = _load_leaders_from_document(
+        target_styles, required_keys, export_all_keys, selected_keys, cfg
+    )
 
     # Ausgabe
     if not leaders:
@@ -1301,6 +1302,13 @@ def export_leader_texts(mode=None):
         if not proceed:
             print("[Export] Abgebrochen nach Vorschau.")
             return
+        
+        # CRITICAL: Reload leaders after preview to get any committed changes
+        print("[Export] Lade Leader neu nach Commit...")
+        leaders, all_user_keys, style_counts, export_lines_text = _load_leaders_from_document(
+            target_styles, required_keys, export_all_keys, selected_keys, cfg
+        )
+        print("[Export] {} Leader neu geladen.".format(len(leaders)))
 
     # Zielformat bestimmen
     if mode is None:

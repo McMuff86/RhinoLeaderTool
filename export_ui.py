@@ -59,6 +59,9 @@ def show_preview_dialog(cfg, leaders, final_keys):
         except Exception:
             pass
 
+        # CRITICAL: Create handler_refs at function scope to prevent GC
+        handler_refs = []
+        
         header_cols = ["text", "dimstyle"] + list(final_keys)
         # Daten vorbereiten (Liste von Dicts)
         rows = []
@@ -114,72 +117,17 @@ def show_preview_dialog(cfg, leaders, final_keys):
             if r.get("_guid"):
                 guid_to_row[r.get("_guid")] = r
 
-        # Content-Bereich mit Scrollbar, Buttons bleiben unten fix
-        content_panel = forms.DynamicLayout(); content_panel.Spacing = drawing.Size(6, 6)
-        # Suchfeld (wirkt auf beide Ansichten) – direkt neben dem Label platzieren
+        # Suchfeld für Tabellenansicht
         search_lbl = forms.Label(); search_lbl.Text = "Suche:"
         search_tb = forms.TextBox()
         try:
             search_tb.Size = drawing.Size(320, -1)
         except Exception:
             pass
-        # separate row mit trailing None hält Feld direkt neben Label links
-        try:
-            content_panel.AddSeparateRow(search_lbl, search_tb, None)
-        except Exception:
-            content_panel.AddRow(search_lbl, search_tb)
 
-        tabs = forms.TabControl()
-        content_panel.AddRow(tabs)
-
-        # 1) Listenansicht
-        try:
-            list_page = forms.TabPage(); list_page.Text = "Liste"
-            listbox = forms.ListBox()
-            compact_rows = []
-            for item in rows:
-                try:
-                    pairs = []
-                    for k in final_keys:
-                        v = item.get(k, "")
-                        if v is None or str(v).strip() == "":
-                            continue
-                        pairs.append("{}={}".format(k, v))
-                    compact = "{} | {}{}".format(item.get("text", ""), item.get("dimstyle", ""), (" | "+" | ".join(pairs)) if pairs else "")
-                except Exception:
-                    compact = str(item)
-                compact_rows.append(compact)
-            listbox.DataStore = compact_rows
-            def apply_filter_list():
-                try:
-                    s = (search_tb.Text or "").strip().lower()
-                    if not s:
-                        listbox.DataStore = compact_rows
-                        return
-                    filtered = [r for r in compact_rows if s in r.lower()]
-                    listbox.DataStore = filtered
-                except Exception:
-                    listbox.DataStore = compact_rows
-            search_tb.TextChanged += lambda s, e: apply_filter_list()
-            apply_filter_list()
-            try:
-                list_scroll = forms.Scrollable(); list_scroll.Content = listbox
-                try:
-                    list_scroll.ExpandContentWidth = True
-                    list_scroll.ExpandContentHeight = False
-                except Exception:
-                    pass
-                list_page.Content = list_scroll
-            except Exception:
-                list_page.Content = listbox
-            tabs.Pages.Add(list_page)
-        except Exception:
-            pass
-
-        # 2) Tabellenansicht
+        # Tabellenansicht
         grid = None
         try:
-            grid_page = forms.TabPage(); grid_page.Text = "Tabelle"
             grid = forms.TreeGridView()
             grid.ShowHeader = True
             grid.AllowMultipleSelection = False
@@ -291,6 +239,8 @@ def show_preview_dialog(cfg, leaders, final_keys):
                     grid.DataStore = build_store(data)
                 except Exception:
                     pass
+            # Store handler to prevent GC
+            handler_refs.append(on_header_click)
             wired = False
             try:
                 grid.ColumnHeaderClick += on_header_click; wired = True
@@ -379,6 +329,8 @@ def show_preview_dialog(cfg, leaders, final_keys):
                             pass
                 except Exception:
                     pass
+            # Store handler to prevent GC
+            handler_refs.append(on_cell_editing)
             try:
                 grid.CellEditing += on_cell_editing
             except Exception:
@@ -449,6 +401,8 @@ def show_preview_dialog(cfg, leaders, final_keys):
                         pass
                 except Exception:
                     pass
+            # Store handler to prevent GC
+            handler_refs.append(on_cell_edited)
             try:
                 grid.CellEdited += on_cell_edited
             except Exception:
@@ -533,6 +487,8 @@ def show_preview_dialog(cfg, leaders, final_keys):
                         update_change_counter()
                 except Exception:
                     pass
+            # Store handler to prevent GC
+            handler_refs.append(on_cell_double)
 
             def apply_filter_grid():
                 try:
@@ -553,8 +509,7 @@ def show_preview_dialog(cfg, leaders, final_keys):
                 except Exception:
                     row_view_ref["data"] = row_data
                     grid.DataStore = build_store(row_view_ref["data"])        
-            # keep a strong reference to event handlers to avoid GC in IronPython
-            handler_refs = []
+            # Wire search handler
             def _on_search_changed(s, e):
                 apply_filter_grid()
             handler_refs.append(_on_search_changed)
@@ -562,14 +517,7 @@ def show_preview_dialog(cfg, leaders, final_keys):
             row_view_ref["data"] = row_data
             grid.DataStore = build_store(row_view_ref["data"])
 
-            try:
-                grid_scroll = forms.Scrollable(); grid_scroll.Content = grid
-                grid_scroll.ExpandContentWidth = True
-                grid_scroll.ExpandContentHeight = False
-                grid_page.Content = grid_scroll
-            except Exception:
-                grid_page.Content = grid
-            tabs.Pages.Add(grid_page)
+            # Grid is ready, will be added to main layout later
         except Exception as grid_ex:
             try:
                 print("[Preview] Tabellenansicht deaktiviert:", grid_ex)
@@ -582,14 +530,16 @@ def show_preview_dialog(cfg, leaders, final_keys):
         except Exception:
             count_lbl.Text = "{} Leader in der Vorschau".format(len(leaders))
         layout.AddRow(count_lbl)
-
-        try:
-            scroll = forms.Scrollable(); scroll.Content = content_panel
-            scroll.ExpandContentWidth = True
-            scroll.ExpandContentHeight = False
-            layout.AddRow(scroll)
-        except Exception:
-            layout.AddRow(content_panel)
+        
+        # Add search box to main layout
+        layout.AddRow(search_lbl, search_tb)
+        
+        # Add grid directly to main layout
+        if grid is not None:
+            try:
+                layout.AddRow(grid)
+            except Exception as ex:
+                print("[Preview] Failed to add grid to layout:", ex)
 
         btn_export = forms.Button(); btn_export.Text = "Exportieren"
         btn_cancel = forms.Button(); btn_cancel.Text = "Abbrechen"
@@ -605,56 +555,32 @@ def show_preview_dialog(cfg, leaders, final_keys):
         except Exception:
             pass
 
-        # safer close helper compatible with SemiModal and Modal dialogs
-        def _safe_close(ok):
-            try:
-                dialog.Tag = bool(ok)
-            except Exception:
-                pass
-            try:
-                # Try direct close first (works for ShowModal)
-                try:
-                    dialog.Close();
-                    return
-                except Exception:
-                    pass
-                import Rhino
-                # If dialog was opened via ShowSemiModal, prefer CloseSemiModal
-                try:
-                    Rhino.UI.EtoExtensions.CloseSemiModal(dialog)
-                    return
-                except Exception:
-                    pass
-                # Fallback: close on UI thread
-                try:
-                    import System
-                    Rhino.RhinoApp.InvokeOnUiThread(System.Action(lambda: dialog.Close()))
-                except Exception:
-                    dialog.Close()
-            except Exception:
-                pass
+        # Close handlers - set result BEFORE closing (Eto doesn't accept Close() argument)
         def on_export(sender, e):
-            _dbg("[Preview] Export clicked")
             try:
-                forms.MessageBox.Show("Export clicked")
-            except Exception:
-                pass
-            _safe_close(True)
+                _dbg("[Preview] Export clicked")
+                dialog.Tag = True  # Set return value
+                dialog.Close()     # Close without argument
+            except Exception as ex:
+                try:
+                    print("[Preview] Error closing dialog:", ex)
+                except Exception:
+                    pass
+        
         def on_cancel(sender, e):
-            _dbg("[Preview] Cancel clicked")
             try:
-                forms.MessageBox.Show("Cancel clicked")
-            except Exception:
-                pass
-            _safe_close(False)
+                _dbg("[Preview] Cancel clicked")
+                dialog.Tag = False  # Set return value
+                dialog.Close()      # Close without argument
+            except Exception as ex:
+                try:
+                    print("[Preview] Error closing dialog:", ex)
+                except Exception:
+                    pass
 
         def on_show(sender, e):
             try:
                 _dbg("[Preview] Show clicked")
-                try:
-                    forms.MessageBox.Show("Show clicked")
-                except Exception:
-                    pass
                 sel = None
                 try:
                     sel = grid.SelectedItem
@@ -703,78 +629,77 @@ def show_preview_dialog(cfg, leaders, final_keys):
                         pass
             except Exception:
                 pass
-        # Helper to wire up handlers with diagnostics and a Command fallback
-        def _wire_with_log(btn, handler, name):
-            wired = False
-            try:
-                btn.Click += handler
-                wired = True
-                try:
-                    print("[Preview] wired Click for", name)
-                except Exception:
-                    pass
-            except Exception as ex:
-                try:
-                    print("[Preview] failed Click for", name, ":", ex)
-                except Exception:
-                    pass
-            if not wired:
-                try:
-                    cmd = forms.Command()
-                    def _exec(_s, _e):
-                        try:
-                            handler(_s, _e)
-                        except Exception:
-                            pass
-                    cmd.Executed += _exec
-                    btn.Command = cmd
-                    handler_refs.append(_exec)
-                    wired = True
-                    try:
-                        print("[Preview] wired Command for", name)
-                    except Exception:
-                        pass
-                except Exception as ex2:
-                    try:
-                        print("[Preview] failed Command for", name, ":", ex2)
-                    except Exception:
-                        pass
-            if wired:
-                handler_refs.append(handler)
-            return wired
-
-        _wire_with_log(btn_export, on_export, "Exportieren")
-        _wire_with_log(btn_cancel, on_cancel, "Abbrechen")
-        _wire_with_log(btn_show, on_show, "Element anzeigen")
+        
+        # Wire button handlers directly (store in handler_refs to prevent GC)
+        handler_refs.extend([on_export, on_cancel, on_show])
+        try:
+            btn_export.Click += on_export
+            print("[Preview] Export button wired")
+        except Exception as ex:
+            print("[Preview] Error wiring export button:", ex)
+        
+        try:
+            btn_cancel.Click += on_cancel
+            print("[Preview] Cancel button wired")
+        except Exception as ex:
+            print("[Preview] Error wiring cancel button:", ex)
+        
+        try:
+            btn_show.Click += on_show
+            print("[Preview] Show button wired")
+        except Exception as ex:
+            print("[Preview] Error wiring show button:", ex)
 
         def on_commit(sender, e):
             try:
                 _dbg("[Preview] Commit clicked")
-                try:
-                    forms.MessageBox.Show("Commit clicked")
-                except Exception:
-                    pass
                 total = 0
                 # Commit changes from the visible grid back to Rhino user text
                 try:
                     guid_idx = col_keys.index("LeaderGUID")
-                except Exception:
+                    print("[Commit Debug] LeaderGUID index:", guid_idx)
+                except Exception as ex:
                     guid_idx = -1
+                    print("[Commit Debug] LeaderGUID not found in col_keys:", ex)
                 try:
                     ds = grid.DataStore
-                except Exception:
+                    print("[Commit Debug] DataStore retrieved:", ds is not None)
+                except Exception as ex:
                     ds = None
+                    print("[Commit Debug] Failed to get DataStore:", ex)
                 if ds is not None and guid_idx >= 0:
+                    print("[Commit Debug] Starting to process rows...")
                     try:
                         import System
-                        for it in ds:
+                        # TreeGridStore is not directly iterable in Python - use Count and indexer
+                        row_count = 0
+                        try:
+                            total_rows = ds.Count
+                            print("[Commit Debug] DataStore has {} rows".format(total_rows))
+                        except Exception:
+                            # Fallback: try to get count another way or iterate differently
+                            total_rows = 0
+                            for item in ds:
+                                total_rows += 1
+                        
+                        for i in range(total_rows):
+                            row_count = i + 1
+                            try:
+                                it = ds[i]
+                            except Exception as ex:
+                                print("[Commit Debug] Failed to access row {}: {}".format(i, ex))
+                                continue
                             try:
                                 vals = it.Values
-                            except Exception:
+                            except Exception as ex:
                                 vals = None
+                                print("[Commit Debug] Row {}: Failed to get Values:".format(row_count), ex)
                             if vals is None or guid_idx >= len(vals):
+                                print("[Commit Debug] Row {}: Skipping (vals={}, guid_idx={}, len={})".format(
+                                    row_count, vals is not None, guid_idx, len(vals) if vals else 0))
                                 continue
                             gtxt = vals[guid_idx]
+                            print("[Commit Debug] Row {}: GUID={}".format(row_count, gtxt))
                             if not gtxt:
                                 # Fallback via text value to map back to guid
                                 try:
@@ -799,6 +724,8 @@ def show_preview_dialog(cfg, leaders, final_keys):
                             if obj_id is None:
                                 continue
                             base_row = guid_to_row.get(gtxt)
+                            print("[Commit Debug] Row {}: base_row found: {}".format(row_count, base_row is not None))
+                            changes_in_row = 0
                             for c_index, key in enumerate(col_keys):
                                 if key in ("text", "dimstyle", "LeaderGUID"):
                                     continue
@@ -810,17 +737,33 @@ def show_preview_dialog(cfg, leaders, final_keys):
                                 except Exception:
                                     old_val = ""
                                 if str(new_val) != str(old_val):
+                                    print("[Commit Debug] Row {}: Change detected in '{}': '{}' -> '{}'".format(
+                                        row_count, key, old_val, new_val))
                                     try:
-                                        if _write_usertext_ui(obj_id, key, new_val):
+                                        write_result = _write_usertext_ui(obj_id, key, new_val)
+                                        print("[Commit Debug] Row {}: _write_usertext_ui('{}', '{}') returned: {}".format(
+                                            row_count, key, new_val, write_result))
+                                        if write_result:
                                             total += 1
+                                            changes_in_row += 1
                                             if base_row is not None:
                                                 base_row[key] = "" if new_val is None else str(new_val)
-                                    except Exception:
-                                        pass
-                    except Exception:
-                        pass
+                                            print("[Commit Debug] Row {}: Successfully wrote '{}' = '{}'".format(
+                                                row_count, key, new_val))
+                                        else:
+                                            print("[Commit Debug] Row {}: ❌ Write FAILED for key '{}' (returned False)".format(row_count, key))
+                                    except Exception as ex:
+                                        print("[Commit Debug] Row {}: ❌ Exception writing '{}': {}".format(row_count, key, ex))
+                            if changes_in_row == 0:
+                                print("[Commit Debug] Row {}: No changes detected".format(row_count))
+                    except Exception as ex:
+                        print("[Commit Debug] Exception in main loop:", ex)
+                else:
+                    print("[Commit Debug] Skipped grid processing: ds={}, guid_idx={}".format(ds is not None, guid_idx))
                 # also apply any pending changes captured from inline editors
+                print("[Commit Debug] Pending changes:", len(pending_changes))
                 for gtxt, kv in list(pending_changes.items()):
+                    print("[Commit Debug] Pending change for GUID {}: {}".format(gtxt, kv))
                     try:
                         import System
                         obj_id = System.Guid(gtxt)
@@ -832,8 +775,9 @@ def show_preview_dialog(cfg, leaders, final_keys):
                         try:
                             if _write_usertext_ui(obj_id, k, v):
                                 total += 1
-                        except Exception:
-                            pass
+                                print("[Commit Debug] Pending: Wrote {} = {}".format(k, v))
+                        except Exception as ex:
+                            print("[Commit Debug] Pending: Failed to write {} = {}: {}".format(k, v, ex))
                 pending_changes.clear()
                 try:
                     pending_count_lbl.Text = "Änderungen: 0"
@@ -849,39 +793,55 @@ def show_preview_dialog(cfg, leaders, final_keys):
                     pass
             except Exception:
                 pass
-        _wire_with_log(btn_commit, on_commit, "Commit All")
+        
+        # Wire commit button handler
+        handler_refs.append(on_commit)
+        try:
+            btn_commit.Click += on_commit
+            print("[Preview] Commit button wired")
+        except Exception as ex:
+            print("[Preview] Error wiring commit button:", ex)
 
-        # Also bind Commands and add a toolbar as an alternative trigger path
+        # Create Commands for toolbar (without overriding Click handlers)
+        cmd_export = None
+        cmd_cancel = None
+        cmd_commit = None
+        cmd_show = None
         try:
             cmd_export = forms.Command(); cmd_export.MenuText = "Exportieren"; cmd_export.ToolBarText = "Exportieren"
-            cmd_export.Executed += lambda s, e: on_export(s, e)
-            btn_export.Command = cmd_export
+            _cmd_export_handler = lambda s, e: on_export(s, e)
+            cmd_export.Executed += _cmd_export_handler
+            handler_refs.append(_cmd_export_handler)
         except Exception:
             pass
         try:
             cmd_cancel = forms.Command(); cmd_cancel.MenuText = "Abbrechen"; cmd_cancel.ToolBarText = "Abbrechen"
-            cmd_cancel.Executed += lambda s, e: on_cancel(s, e)
-            btn_cancel.Command = cmd_cancel
+            _cmd_cancel_handler = lambda s, e: on_cancel(s, e)
+            cmd_cancel.Executed += _cmd_cancel_handler
+            handler_refs.append(_cmd_cancel_handler)
         except Exception:
             pass
         try:
             cmd_commit = forms.Command(); cmd_commit.MenuText = "Commit All"; cmd_commit.ToolBarText = "Commit All"
-            cmd_commit.Executed += lambda s, e: on_commit(s, e)
-            btn_commit.Command = cmd_commit
+            _cmd_commit_handler = lambda s, e: on_commit(s, e)
+            cmd_commit.Executed += _cmd_commit_handler
+            handler_refs.append(_cmd_commit_handler)
         except Exception:
             pass
         try:
             cmd_show = forms.Command(); cmd_show.MenuText = "Element anzeigen"; cmd_show.ToolBarText = "Anzeigen"
-            cmd_show.Executed += lambda s, e: on_show(s, e)
-            btn_show.Command = cmd_show
+            _cmd_show_handler = lambda s, e: on_show(s, e)
+            cmd_show.Executed += _cmd_show_handler
+            handler_refs.append(_cmd_show_handler)
         except Exception:
             pass
+        # Add toolbar (optional alternative trigger path)
         try:
             tb = forms.ToolBar()
-            tb.Items.Add(cmd_export)
-            tb.Items.Add(cmd_commit)
-            tb.Items.Add(cmd_show)
-            tb.Items.Add(cmd_cancel)
+            if cmd_export: tb.Items.Add(cmd_export)
+            if cmd_commit: tb.Items.Add(cmd_commit)
+            if cmd_show: tb.Items.Add(cmd_show)
+            if cmd_cancel: tb.Items.Add(cmd_cancel)
             dialog.ToolBar = tb
         except Exception:
             pass
@@ -891,19 +851,7 @@ def show_preview_dialog(cfg, leaders, final_keys):
              ", show=", isinstance(btn_show, forms.Button), 
              ", commit=", isinstance(btn_commit, forms.Button))
 
-        # also retain grid-related handlers to ensure they are not garbage collected
-        try:
-            handler_refs.extend([
-                on_header_click,
-                on_cell_editing,
-                on_cell_edited,
-                on_cell_double,
-                apply_filter_grid,
-                update_change_counter,
-            ])
-        except Exception:
-            pass
-
+        # Attach handler_refs to dialog to ensure they survive GC
         try:
             dialog._handler_refs = handler_refs
         except Exception:
@@ -922,7 +870,7 @@ def show_preview_dialog(cfg, leaders, final_keys):
             pass
 
         dialog.Content = layout
-        dialog.Tag = False
+        dialog.Tag = False  # Initialize return value
         # Global key bindings (Enter=Export, Escape=Abbrechen) on dialog and main widgets
         try:
             def _on_key_down(s, e):
@@ -953,7 +901,7 @@ def show_preview_dialog(cfg, leaders, final_keys):
             handler_refs.append(_on_key_down)
         except Exception:
             pass
-        # Prefer modal ShowModal for reliable Close(); fall back to SemiModal if needed
+        # Show modal dialog and get return value from dialog.Tag
         try:
             try:
                 dialog.Owner = Rhino.UI.RhinoEtoApp.MainWindow
@@ -968,7 +916,8 @@ def show_preview_dialog(cfg, leaders, final_keys):
                     dialog.ShowModal(Rhino.UI.RhinoEtoApp.MainWindow)
                 except Exception:
                     return True
-        return bool(dialog.Tag)
+        # Return the value set in dialog.Tag by button handlers
+        return bool(dialog.Tag) if dialog.Tag is not None else True
     except Exception as e:
         try:
             print("[Preview] Fehler beim Aufbau der Vorschau:", e)
