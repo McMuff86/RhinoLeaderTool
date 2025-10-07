@@ -102,6 +102,40 @@ bbst !_-RunPythonScript "C:\Users\adrian.muff\source\\repos\work\library\RhinoLe
 bbsp !_-RunPythonScript "C:\Users\adrian.muff\source\\repos\work\library\RhinoLeaderTool\run_spez.py"
 ```
 
+### 📚 Dokumentation
+
+Alle detaillierten Informationen findest du im [`docs/`](docs/) Ordner:
+
+#### Für Nutzer
+
+- **[Nutzungsanleitung](docs/USEAGE.md)** - Tägliche Workflows, Leader erstellen, Export und Sync
+- **[Export & Preview UI](docs/preview_export_ui.md)** - Vorschau, Tabellenbearbeitung, Filter und Presets
+
+#### Für Entwickler / AI-Agenten
+
+- **⚠️ [Agent-Leitfaden](docs/AGENTS.md)** - **Zuerst lesen!** Alle kritischen Implementierungsdetails
+  - Repository-Struktur
+  - Eto-Dialog-Patterns für IronPython
+  - Event Handler Garbage Collection Prevention
+  - .NET Collection Iteration
+  - Best Practices und häufige Probleme
+  
+- **[Geplante Verbesserungen](docs/FUTURE_IMPROVEMENTS.md)** - Roadmap und Feature-Ideen
+
+#### Weiteres
+
+- **[Änderungshistorie](CHANGELOG.md)** - Vollständige Versionshistorie
+- **Konfiguration**: [`config.json`](config.json) - Zentrale Einstellungen
+- **CSV-Templates**: [`csv_template/`](csv_template/) - Leader-Typ-Vorlagen
+
+---
+
+### 🚀 Schnellstart
+
+1. **Installation**: Repository klonen, Rhino-Aliases setzen (siehe oben)
+2. **Erste Schritte**: [Nutzungsanleitung](docs/USEAGE.md)
+3. **Entwicklung**: [AGENTS.md](docs/AGENTS.md) lesen!
+
 ### Lizenz
 Interne Nutzung. Falls du eine formale Lizenz benötigst, ergänze sie hier.
 
