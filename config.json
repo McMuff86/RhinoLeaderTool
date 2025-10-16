@@ -34,6 +34,7 @@
     "default_preset": "Standard",
     "presets": [
       { "name": "Standard", "csv": "rahmentuere.csv" },
+      { "name": "Standard Blockrahmen", "csv": "rahmentuereBlockrahmen.csv" },
       { "name": "Nebenraum Typ1", "csv": "rahmentuere_nebenraum_Typ1.csv" }
   ]
 },

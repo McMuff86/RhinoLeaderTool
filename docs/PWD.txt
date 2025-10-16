@@ -1,0 +1,5 @@
+BucherAG -> ODBC Driver 17 for SQL Server
+Name:BucherAG
+Server:BUAS01\BGR2022, 1433
+user:sa
+pw:wqTtg$nawdWSQL
