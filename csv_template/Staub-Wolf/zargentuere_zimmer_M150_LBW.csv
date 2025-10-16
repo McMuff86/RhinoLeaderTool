@@ -1,0 +1,60 @@
+Bandseite,L
+Bandtyp,Elkuch 16-4
+Bandanzahl,3
+Bandmass_1_c,calc
+Bandmass_2_b,calc
+Bandmass_3_d,calc
+Besonderes,0
+Betriebsauftrag,NA
+Betriebsauftragsposition,NA
+Bodeneinstand,40
+Brandschutz,0
+Drückergarnitur,0
+Einlaufseite_von_aussen,NA
+Farbe_Bandseite,RAL9016
+Farbe_Futterseite,RAL9016
+Haus,NA
+Lichtbreite,900
+Lichthöhe,2100
+Maueraufbau_Bandseite,0
+Maueraufbau_Futterseite,0
+Mauerlichtbreite_Massaufnahme,NA
+Mauerlichtbreite_plan,950
+Mauerlichthöhe_Massaufnahme,NA
+Mauerlichthöhe_Massaufnahme_ab_MtR,NA
+Mauerlichthöhe_plan,2140
+Mauerstärke_Massaufnahme,NA
+Mauerstärke_plan,150
+Montageart,NA
+Muschelgriff_typ,NA
+NPK_Pos.,NA
+Rahmenfalzbreite,NA
+Rahmenfalztiefe,NA
+Rahmenstärke,NA
+Schiebtürbeschlag,NA
+Schild_Rosette_Druecker,NA
+Schild_Rosette_Zylinder,NA
+Schliessblechtyp,Vibro-Riegel (ohne Nase) mit Schlosskasten
+Schloss,NA
+Schlosstyp,1001_BB
+Schwelle,0
+Schwellentyp,V
+Spion,NA
+Typ,UDS
+Türblatt_Falzbreite,0
+Türblatt_Falztiefe,0
+Türblatt_Farbe_Bandseite,RAL9016
+Türblatt_Farbe_Futterseite,RAL9016
+Türblattdicke,39+1+1
+Türblattkanten,Eiche
+Türblattkern,LS39
+Türblatttyp,Schuler Leichtspan 39 mit 5mm Hartdeckplatte
+Türblatt_Absenkdichtung,NA
+Türschliesser,NA
+Umfassungstyp,Stahlzarge
+Zargen Bemerkung,NA
+Zargen E-Mass,1003
+Zargen-Profil,UDS.LBW
+Zargenfalzbreite,17
+Zargenfalztiefe,48
+Zargentiefe,180
